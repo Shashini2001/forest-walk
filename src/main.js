@@ -2218,12 +2218,13 @@ async function initCharacter() {
   try {
     const names = ['Walking', 'Waving', 'Talking', 'Paddling']
     const missing = []
+    let lastErr = ''
     /* එක් එක් file එක වෙන වෙනම load කරනවා (එකක් නැති වුනාට ඇය නැති වෙන්නේ නැහැ). Linux/Vercel වල ලොකු-පොඩි අකුරු වැදගත් නිසා lowercase නමත් උත්සාහ කරනවා */
     const grab = async (file, optional = false) => {
       for (const f of [file, file.toLowerCase()]) {
-        try { return await fbxLoader.loadAsync(encodeURI(`${BASE}${f}`)) } catch (e) { /* ඊළඟ නම */ }
+        try { return await fbxLoader.loadAsync(encodeURI(`${BASE}${f}`)) } catch (e) { lastErr = (e && (e.message || e.type || e.target && e.target.status)) || String(e); console.warn('FBX load fail:', f, e) }
       }
-      if (!optional) missing.push(file)
+      if (!optional) missing.push(file + ' [' + lastErr + ']')
       return null
     }
     const [idleFbx, stairsFbx, ...fbxs] = await Promise.all([
