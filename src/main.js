@@ -9,7 +9,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 
-/* error එකක් ආවොත් තිරය මත රතු පෙට්ටියක පෙන්නනවා (සුදු තිරයක් වෙනුවට) */
+/* if an error happens, show it in a red box on screen (instead of a blank white screen) */
 function showErr(msg) {
   let el = document.getElementById('err-overlay')
   if (!el) {
@@ -31,7 +31,7 @@ const BASE = '/'
 
 const FILES = {
   trees: ['tree_low_poly_lowpoly', 'scene', 'tree1', 'tree2', 'tree3', 'tree4'],
-  treehouse: ['treehouse', 'tree_house'],                                 // ගස් ගෙදර (treehouse.gltf) - එක්වරක් විතරක්
+  treehouse: ['treehouse', 'tree_house'],                                 // treehouse (treehouse.gltf) - loaded only once
   rocks: ['ruined_rock_fence'],
   flock: ['12_animated_butterflies'],
   grass: ['grass1', 'grass2'],
@@ -48,23 +48,23 @@ const FILES = {
 const BUTTERFLY_FBX = 'BUTTERFLY.fbx'
 const ROCK_FBX = 'rock3.fbx'
 
-/* ---- දුර (gap) වෙනස් කරන්න මේ 3 වෙනස් කරන්න ---- */
-const EXT = 60        // පාලම => තොටුපළ අතර පාර (road) දිග
-const RIV = 32        // බෝට්ටුවෙන් යන ගඟ දිග වැඩි කිරීම
-const POOL = 14       // බෝට්ටුව නවතින තැන => දිය ඇල්ල (pool) දුර
-const S1 = EXT                    // තොටුපළ / ගඟ පටන් ගැනීම
-const S2 = EXT + RIV              // ගල් තට්ටුව
-const S3 = EXT + RIV + POOL       // දිය ඇල්ල
+/* ---- change these 3 values to adjust distances (gaps) ---- */
+const EXT = 60        // length of the road between the bridge and the pier
+const RIV = 32        // length of the river section travelled by boat
+const POOL = 14       // distance from where the boat stops to the waterfall pool
+const S1 = EXT                    // start of the pier / river
+const S2 = EXT + RIV              // rock terrace
+const S3 = EXT + RIV + POOL       // waterfall
 
-const CHAR_HEIGHT = 1.8      // ඇයගේ උස (m)
+const CHAR_HEIGHT = 1.8      // her height (m)
 const CHAR_GLOW = 0.12
 const BOARD_S = 57 + S1
 const LAND_S = 120.5 + S2
 const MAX_PROGRESS = 134 + S2
 const LAND_Z = -133 - S2
-const WF = -145 - S3         // දිය ඇල්ලේ පාදම z
-const END_CAM = { dist: 5.6, h: 2.2, look: 2.2 }   // අවසාන shot: dist = දුර (වැඩි = දුරින්), h = උස, look = බලන උස (වැඩි = දිය ඇල්ලත් පේනවා)
-const CAM_DIST = 4.3          // ඇවිදිද්දී camera දුර (අඩු = ඇයට ළං)
+const WF = -145 - S3         // z of the waterfall base
+const END_CAM = { dist: 5.6, h: 2.2, look: 2.2 }   // final shot: dist = distance (bigger = farther), h = height, look = look-at height (bigger = waterfall visible too)
+const CAM_DIST = 4.3          // camera distance while walking (smaller = closer to her)
 const CAM_HEIGHT = 2.7
 const WATER_Y = -0.45
 const BG = '#16201d'
@@ -97,7 +97,7 @@ const SZ = {
   waterThick: 0.3,
 }
 const BOAT_FLOOR = 0.35
-const BOAT_LIFT = 0.24      // බෝට්ටුව වතුරෙන් උඩට (ඇතුළට වතුර නොපෙනෙන්න)
+const BOAT_LIFT = 0.24      // lift the boat above the water (so no water shows inside)
 const PIER_Y = 0.12
 const BRIDGE_DECK_Y = 0.15
 const LAMP_CULL = 62
@@ -105,14 +105,14 @@ const LAMP_CULL = 62
 const OAR = { rot: [0, 0, 90], off: [0, 0, 0], hand: 'Right' }
 
 const LOW = matchMedia('(max-width: 800px)').matches
-/* LITE = සැහැල්ලු mode (default). ඉහළ quality ඕන නම් URL එකට ?hq එකතු කරන්න: localhost:5173/?hq */
+/* LITE = light mode (default). For high quality add ?hq to the URL: localhost:5173/?hq */
 const LITE = !location.search.includes('hq')
 const pick = (lite, full) => (LITE || LOW) ? lite : full
-/* 128MB GPU වගේ පොඩි ඒවාට: render resolution (0.7 = 70%), texture උපරිම ප්‍රමාණය, දුර ඉවත් කිරීම (culling) */
+/* For small GPUs (e.g. 128MB): render resolution (0.7 = 70%), max texture size, distance culling */
 let RES = LITE ? 0.7 : Math.min(window.devicePixelRatio || 1, 1.5)
 const MAXT = pick(512, 1024)
 const CULL = LITE ? 90 : 110
-const ADAPT = LITE                      // FPS අඩු නම් resolution එක ඉබේම අඩු කරනවා
+const ADAPT = LITE                      // if FPS drops, the resolution is lowered automatically
 const COUNT = {
   treeNear: pick(380, 800),
   treeFar: pick(520, 1300),
@@ -144,19 +144,19 @@ function lerpAngle(a, b, t) {
   return a + d * t
 }
 
-/* ---- ගස් ගෙදර (tree_low_poly_lowpoly.glb): පාර අයිනේ, ඇය ඉණිමගෙන් නැගලා උඩ Waving කරනවා ---- */
+/* ---- treehouse (tree_low_poly_lowpoly.glb): beside the road, she climbs the stairs and waves from the deck ---- */
 const TH = {
-  z: -17,                     // පාරේ කොතනටද (z)
-  side: 1,                    // 1 = දකුණු පැත්ත, -1 = වම් පැත්ත
-  off: 10.5,                  // පාරේ මැද සිට දුර (m)
-  height: 11.5,               // ගෙයි + ගහේ සම්පූර්ණ උස (m)
-  yaw: 0,                     // කරකැවීම (අංශක). ඉණිමග පාර දිහා නොබලනවා නම්: game එකේ Y ඔබන්න (90° බැගින්)
-  s0: 10, s1: 30,             // scroll අගයන් අතර ඉණිමගෙන් නගිනවා
-  stairFoot: [-0.22, 0.30],   // ඉණිමං පාමුල (ගෙයි පළල/ගැඹුරේ භාගයේ ප්‍රතිශතයක්: x, z)
-  stairTop: [-0.10, 0.20],    // ඉණිමං මුදුන
-  deckY: 0.27,                // ගෙයි බිම උස (සම්පූර්ණ උසේ ප්‍රතිශතයක්)
-  deck: [0.05, 0.0],          // ගෙයි බිම ඇය නවතින තැන
-  climb: true,                // false කළොත් නගින්නේ නැහැ
+  z: -17,                     // where along the road (z)
+  side: 1,                    // 1 = right side, -1 = left side
+  off: 10.5,                  // distance from the road centre (m)
+  height: 11.5,               // total height of house + tree (m)
+  yaw: 0,                     // rotation (degrees). If the stairs do not face the road: press Y in the game (90 degrees per press)
+  s0: 10, s1: 30,             // she climbs the stairs between these scroll values
+  stairFoot: [-0.22, 0.30],   // stair foot (fraction of the house width / depth: x, z)
+  stairTop: [-0.10, 0.20],    // stair top
+  deckY: 0.27,                // deck height (fraction of the total height)
+  deck: [0.05, 0.0],          // where she stops on the deck
+  climb: true,                // if false, she does not climb
 }
 const TH_X = pathX(TH.z) + TH.side * TH.off
 const TH_Z = TH.z
@@ -168,12 +168,12 @@ let thHolder = null, thWay = null, thDbg = null, thAuto = null, thLight = null, 
    ===================================================================== */
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(BG)
-scene.fog = new THREE.Fog(BG, 16, LITE ? 92 : 100)          // ගස් ඈතටත් පේන්න (fog අඩු)
+scene.fog = new THREE.Fog(BG, 16, LITE ? 92 : 100)          // trees visible far away (less fog)
 
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, LITE ? 200 : 260)
 camera.position.set(0, 3, 7)
 
-function makeRenderer() {                                   // WebGL fail උනොත් සරල විදිහට නැවත උත්සාහ කරනවා
+function makeRenderer() {                                   // if WebGL fails, retry in a simpler way
   const tries = [
     { antialias: !LITE, powerPreference: 'high-performance' },
     { antialias: false, powerPreference: 'default' },
@@ -183,18 +183,18 @@ function makeRenderer() {                                   // WebGL fail උන
     try { return new THREE.WebGLRenderer(opts) } catch (e) { console.warn('WebGL try failed', opts, e) }
   }
   document.body.style.background = '#16201d'
-  showErr('WebGL පටන් ගන්න බැහැ.\n1) Edge/Chrome සම්පූර්ණයෙන්ම වසලා නැවත open කරන්න\n2) Settings => System => "Use graphics acceleration when available" ON කරන්න\n3) වෙනත් WebGL tabs (three.js / games) වසන්න\n4) edge://gpu එකේ WebGL "Hardware accelerated" ද බලන්න')
+  showErr('Could not start WebGL.\n1) Fully close and reopen Edge/Chrome\n2) Settings => System => turn ON "Use graphics acceleration when available"\n3) Close other WebGL tabs (three.js / games)\n4) Check that WebGL shows "Hardware accelerated" at edge://gpu')
   throw new Error('WebGL unavailable')
 }
 const renderer = makeRenderer()
 renderer.domElement.addEventListener('webglcontextlost', e => {
   e.preventDefault()
-  showErr('WebGL context lost (GPU එක අමාරුවෙලා). Tab එක reload කරන්න.')
+  showErr('WebGL context lost (the GPU is overloaded). Please reload the tab.')
 })
 renderer.setPixelRatio(1)
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 0.98
-renderer.shadowMap.enabled = true                          // ඇයගේ සෙවණැල්ල (පොඩි shadow map එකක් - VRAM 4MB)
+renderer.shadowMap.enabled = true                          // her shadow (small shadow map, 4MB VRAM)
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 document.body.style.margin = 0
 document.body.style.overflow = 'hidden'
@@ -203,14 +203,14 @@ document.body.appendChild(renderer.domElement)
 
 const composer = new EffectComposer(renderer)
 composer.addPass(new RenderPass(scene, camera))
-const BLOOM_K = LITE ? 0.5 : 1                                  // bloom අඩ resolution එකෙන් (වේගවත්)
+const BLOOM_K = LITE ? 0.5 : 1                                  // bloom at half resolution (faster)
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth * BLOOM_K, innerHeight * BLOOM_K), 0.38, 0.55, 0.93)
 composer.addPass(bloom)
 composer.addPass(new OutputPass())
 
-/* canvas එක RES ප්‍රමාණයෙන් render කරලා CSS වලින් තිරයට ඇදගන්නවා (VRAM + වේගය) */
+/* render the canvas at RES size and stretch it to the screen with CSS (saves VRAM + faster) */
 function applySize() {
-  /* ඕනම තිරයකට: portrait (ෆෝන්) වලදී FOV වැඩි කරනවා ඇය සහ පරිසරය පෙනෙන්න */
+  /* for any screen: on portrait (phones) widen the FOV so she and the scenery stay visible */
   const asp = innerWidth / Math.max(1, innerHeight)
   camera.aspect = asp
   camera.fov = asp >= 1.45 ? 50 : Math.min(88, 2 * Math.atan(Math.tan(25 * Math.PI / 180) * 1.45 / asp) * 180 / Math.PI)
@@ -242,8 +242,8 @@ const moon = new THREE.DirectionalLight(0xb4ccff, 1.2)
 moon.position.set(-10, 20, 5)
 scene.add(moon)
 
-/* ඇයව ලස්සනට පෙන්නන්න: key (උණුසුම්, camera පැත්තෙන් උඩින්) + rim (සීතල, පිටිපස්සෙන්). වැඩිය දීප්තිමත් නොවී ස්වභාවිකව */
-const pool = new THREE.SpotLight(0xffd98a, 150, 22, 0.55, 0.9, 2)   // කහ පැහැති key light (ඇයට පමණක් - බිම වැඩිය නොදැල්වෙන්න)
+/* make her look good: key (warm, from the camera side, above) + rim (cool, from behind). Natural, not too bright */
+const pool = new THREE.SpotLight(0xffd98a, 150, 22, 0.55, 0.9, 2)   // warm yellow key light (only for her, so the ground does not glow too much)
 pool.castShadow = true
 pool.shadow.mapSize.set(1024, 1024)
 pool.shadow.bias = -0.0004
@@ -254,16 +254,16 @@ pool.shadow.radius = 4
 scene.add(pool, pool.target)
 const rim = new THREE.DirectionalLight(0x9fc2ff, 0.8)
 scene.add(rim, rim.target)
-const fill = new THREE.PointLight(0xffc860, 5, 6, 2)             // ඇය වටේ මෘදු කහ ආලෝකය
+const fill = new THREE.PointLight(0xffc860, 5, 6, 2)             // soft warm light around her
 scene.add(fill)
 
-const lampLights = Array.from({ length: LITE ? 3 : 5 }, () => {      // ළඟම තියෙන lantern වලට ආලෝකය (lamp ලඟ දැල්වෙනවා)
+const lampLights = Array.from({ length: LITE ? 3 : 5 }, () => {      // light for the nearest lanterns (they glow when she is close)
   const l = new THREE.PointLight(0xffa850, 26, 15, 2)
   scene.add(l)
   return l
 })
-thLight = new THREE.PointLight(0xffc860, 0, 8, 2)                       // ගස් ගෙදරේම ආලෝකය (ළඟ ගහට නෙමෙයි)
-const thLight2 = new THREE.PointLight(0xffd060, 0, 8, 2)            // ගස ළඟ කහ ආලෝකය
+thLight = new THREE.PointLight(0xffc860, 0, 8, 2)                       // light on the treehouse itself (not the nearby tree)
+const thLight2 = new THREE.PointLight(0xffd060, 0, 8, 2)            // yellow light near the tree
 scene.add(thLight, thLight2)
 
 /* =====================================================================
@@ -284,7 +284,7 @@ function glowTexture() {
   return t
 }
 const glow = glowTexture()
-const glowDisc = new THREE.Mesh(                         // ඇය යට බිමේ ආලෝක කවය
+const glowDisc = new THREE.Mesh(                         // light circle on the ground under her
   new THREE.CircleGeometry(2.4, 48).rotateX(-Math.PI / 2),
   new THREE.MeshBasicMaterial({ map: glow, color: new THREE.Color(1, 0.84, 0.58), transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false })
 )
@@ -405,7 +405,7 @@ function groundH(x, z) {
   }
 }
 
-/* forest_ground_08.glb / floor.gltf ඒකේ texture බිමට දානවා */
+/* apply the texture from forest_ground_08.glb / floor.gltf to the ground */
 function applyFloor(gltf) {
   let mat = null
   gltf.scene.traverse(o => { if (!mat && o.isMesh) mat = Array.isArray(o.material) ? o.material[0] : o.material })
@@ -502,7 +502,7 @@ const waterMat = new THREE.ShaderMaterial({
       float c1 = vnoise(p * 2.2 + vec2(uTime * 0.3, uTime * 0.2));
       float c2 = vnoise(p * 2.9 - vec2(uTime * 0.25, uTime * 0.35));
       float caustic = max(pow(max(1.0 - abs(c1 - c2) * 2.2, 0.0), 6.0), 0.0);
-      col *= 1.0 - 0.3 * pool;                                  // pool එකේ වතුර තවත් අඳුරු (ගැඹුරු)
+      col *= 1.0 - 0.3 * pool;                                  // water in the pool is darker (deeper)
       col += vec3(0.03, 0.24, 0.32) * pool * (0.12 + caustic * 0.7);
 
       vec3 skyCol = mix(uSky, vec3(0.5, 0.62, 0.78), fres);
@@ -537,11 +537,11 @@ const waterMat = new THREE.ShaderMaterial({
   scene.add(waterMesh)
 }
 
-/* පාලම යට දිය පාර (stream): z = -35 හරහා තියෙන අගල වතුරෙන් පුරවනවා */
+/* stream under the bridge: fill the ditch at z = -35 with water */
 {
   const streamMat = waterMat.clone()
   streamMat.defines = { STREAM: 1 }
-  streamMat.uniforms = waterMat.uniforms                 // uTime එක share වෙනවා
+  streamMat.uniforms = waterMat.uniforms                 // share uTime
   const sg = new THREE.PlaneGeometry(130, 5.6, 80, 4)
   sg.rotateX(-Math.PI / 2)
   const stream = new THREE.Mesh(sg, streamMat)
@@ -549,7 +549,7 @@ const waterMat = new THREE.ShaderMaterial({
   scene.add(stream)
 }
 
-/* water.gltf ටයිල් කරලා ගඟේ ගැඹුරු තට්ටුව ලෙස (shader වතුර යටින්) */
+/* tile water.gltf as the deep layer of the river (shader water on top) */
 function buildWaterTiles(gltf) {
   const T = SZ.waterTile
   gltf.scene.updateMatrixWorld(true)
@@ -653,11 +653,11 @@ const mistPos = new Float32Array(MIST * 3)
 }
 
 /* ---------- waterfall extras ---------- */
-const poolLight = new THREE.PointLight(0x4fd8ff, 14, 22, 2)       // pool එකට නිල් ආලෝකය
+const poolLight = new THREE.PointLight(0x4fd8ff, 14, 22, 2)       // blue light for the pool
 poolLight.position.set(CX, 0.4, WF + 9)
 scene.add(poolLight)
 
-const cascades = []                                               // ගල් දිගේ ගලන කුඩා දිය දහරා
+const cascades = []                                               // small streams running down the rocks
 for (const [dx, w, h, op] of [[-3.3, 0.9, 20, 0.55], [3.4, 1.1, 17, 0.55], [-4.5, 0.6, 11, 0.4], [4.6, 0.7, 12, 0.4]]) {
   const tx = fallTex.clone()
   tx.needsUpdate = true
@@ -672,7 +672,7 @@ for (const [dx, w, h, op] of [[-3.3, 0.9, 20, 0.55], [3.4, 1.1, 17, 0.55], [-4.5
   cascades.push(tx)
 }
 
-const FOAM = LITE ? 90 : 180                                      // ඇල්ල යට පෙණ
+const FOAM = LITE ? 90 : 180                                      // foam under the waterfall
 const foamGeo = new THREE.BufferGeometry()
 const foamPos = new Float32Array(FOAM * 3)
 const foamSeed = new Float32Array(FOAM)
@@ -689,7 +689,7 @@ scene.add(new THREE.Points(foamGeo, new THREE.PointsMaterial({
 })))
 
 /* =====================================================================
-   NIGHT SKY: තරු, ගිනි ගෙඩි (shooting stars), සඳ, ගඟ උඩින් මීදුම
+   NIGHT SKY: stars, shooting stars, moon, mist over the river
    ===================================================================== */
 const skyGroup = new THREE.Group()
 scene.add(skyGroup)
@@ -748,7 +748,7 @@ for (let i = 0; i < (LITE ? 1 : 2); i++) {
   shooters.push(m)
 }
 
-const RMIST = LITE ? 70 : 150                                     // ගඟ උඩින් ගලන මීදුම
+const RMIST = LITE ? 70 : 150                                     // mist drifting over the river
 const rmGeo = new THREE.BufferGeometry()
 const rmPos = new Float32Array(RMIST * 3)
 const rmOff = new Float32Array(RMIST)
@@ -768,7 +768,7 @@ scene.add(new THREE.Points(rmGeo, new THREE.PointsMaterial({
   blending: THREE.AdditiveBlending, depthWrite: false
 })))
 
-/* පාර දිගේ පහළින් ගලන සියුම් නිල් මීදුම (ස්වභාවික පෙනුමට) */
+/* thin blue mist drifting low along the road (natural look) */
 const GM = LITE ? 36 : 70
 const gmGeo = new THREE.BufferGeometry()
 const gmPos = new Float32Array(GM * 3)
@@ -788,7 +788,7 @@ scene.add(new THREE.Points(gmGeo, new THREE.PointsMaterial({
   blending: THREE.AdditiveBlending, depthWrite: false
 })))
 
-/* වැටෙන කොළ (ස්වභාවික පෙනුමට) */
+/* falling leaves (natural look) */
 const LV = LITE ? 26 : 56
 const lvGeo = new THREE.BufferGeometry()
 const lvPos = new Float32Array(LV * 3)
@@ -848,7 +848,7 @@ gltfLoader.setDRACOLoader(draco)
 gltfLoader.setMeshoptDecoder(MeshoptDecoder)
 const fbxLoader = new FBXLoader()
 
-/* ---- GPU මතකය: ලොකු texture පොඩි කරනවා (මුළු VRAM එකෙන් වැඩිම කෑවෙන්නේ ඒවා) ---- */
+/* ---- GPU memory: shrink large textures (they use most of the VRAM) ---- */
 const PBR_DROP = ['normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'bumpMap']
 const TEX_KEYS = ['map', 'emissiveMap', 'alphaMap', ...PBR_DROP]
 const shrinkStats = { shrunk: 0, dropped: 0 }
@@ -867,7 +867,7 @@ function shrinkTex(t, max = MAXT) {
     t.userData.shrunk = true
     t.needsUpdate = true
     shrinkStats.shrunk++
-  } catch (e) { /* පොඩි කරන්න බැරි නම් තියෙන විදිහටම */ }
+  } catch (e) { /* if it cannot be shrunk, keep as is */ }
 }
 function shrinkObj(obj, max = MAXT, drop = false) {
   try {
@@ -875,7 +875,7 @@ function shrinkObj(obj, max = MAXT, drop = false) {
       if (!o.isMesh) return
       ;(Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
         if (!m) return
-        if (drop) {                                   // LITE: normal/roughness/AO texture අයින් කරනවා
+        if (drop) {                                   // LITE: remove normal/roughness/AO textures
           let dropped = false
           for (const k of PBR_DROP) if (m[k]) { m[k].dispose(); m[k] = null; dropped = true }
           if (dropped) {
@@ -906,8 +906,8 @@ async function tryLoad(name) {
       if (window.setLoad) window.setLoad(loadedCount)
       console.log('✔ loaded', `${name}.${ext}`)
       return g
-    } catch (e) {                                       // file නැත්නම් නිහඬව ඉක්මවනවා (ගස් ගෙදර නම් console එකේ හේතුව පෙන්නනවා)
-      if (ext === 'gltf' && FILES.treehouse.includes(name)) console.warn('✖', name + '.gltf load failed:', (e && e.message) || e, '(.gltf එකට අදාල .bin / texture files public/ එකේ තියෙන්න ඕන)')
+    } catch (e) {                                       // if the file is missing, skip silently (for the treehouse the reason is logged to the console)
+      if (ext === 'gltf' && FILES.treehouse.includes(name)) console.warn('✖', name + '.gltf load failed:', (e && e.message) || e, '(the .bin / texture files for this .gltf must be in public/)')
     }
   }
   return null
@@ -948,7 +948,7 @@ function fitProp(root, { height, length, max, alongZ = false, flip = false } = {
 const dummy = new THREE.Object3D()
 const col = new THREE.Color()
 
-/* instance ඔක්කොම එකම mesh එකක් වෙනුවට කොටස් (chunk) වලට බෙදනවා: camera එකෙන් ඈත ඒවා draw කරන්නේ නැහැ (GPU වේගය) */
+/* split instances into chunks instead of one big mesh: chunks far from the camera are not drawn (GPU speed) */
 const chunkList = []
 const CH_Z = 26, CH_X = 44
 function scatter(meshes, count, place, tint = false) {
@@ -1009,7 +1009,7 @@ function scatterGLTF(gltf, { height, max, count, place, wind: w = 0, tint = fals
     g.applyMatrix4(fix)
     if (w && !Array.isArray(o.material)) addWind(o.material, target, w)
     let mt = o.material
-    if (wet && !Array.isArray(mt)) {                 // තෙත ගල්
+    if (wet && !Array.isArray(mt)) {                 // wet rocks
       mt = mt.clone()
       mt.roughness = 0.28
       mt.metalness = 0.12
@@ -1027,10 +1027,10 @@ function scatterRocks(max, count, place, wet = false) {
   rockSources.forEach(g => scatterGLTF(g, { max, count: Math.ceil(count / n), place, tint: true, wet }))
 }
 
-/* දිය ඇල්ල පිටිපස්සේ ගල් බිත්තිය: rock3.fbx (ස්වභාවික ගල්) ලොකුවට, තට්ටු 4කට, මැද ඇල්ල යන තැන හිස් කරලා */
+/* rock wall behind the waterfall: large natural rocks (rock3.fbx), 4 layers, with a gap in the middle where the waterfall falls */
 function buildCliffRocks(src) {
   if (!src) return
-  if (cliffMesh) cliffMesh.position.z -= 4                // පරණ low-poly බිත්තිය පිටිපස්සට (ගල් වලින් වැහෙනවා)
+  if (cliffMesh) cliffMesh.position.z -= 4                // push the old low-poly wall back (hidden by the rocks)
   const layers = [
     { y: -0.6, max: 13, n: pick(14, 24), z: 0 },
     { y: 8,    max: 15, n: pick(10, 17), z: -2 },
@@ -1074,7 +1074,7 @@ function placeTreeFar() {
   if (y < -0.25) return null
   return { x, y: y - 0.1, z, s: rand(1.0, 2.0) }
 }
-/* ගඟ ඉවුරු දිගේ පොඩි පැළ + pool එක වටේ පොඩි පැළ / පොඩි ගස් */
+/* small plants along the river banks + small plants / small trees around the pool */
 function placeRiverPlant() {
   const z = rand(-52 - S1, WF + 2)
   const side = Math.random() < 0.5 ? -1 : 1
@@ -1090,7 +1090,7 @@ function placePoolPlant() {
   if (y < -0.2 || nearLanding(x, z)) return null
   return { x, y: y - 0.02, z, s: rand(0.8, 1.6) }
 }
-/* ගස් ගෙදර වටේ ලස්සන ගස් + පැළ (පාරට ඉඩ තියලා) */
+/* nice trees + plants around the treehouse (leaving room for the road) */
 function placeTHTree() {
   const a = rand(0, Math.PI * 2), r = rand(10.2, 19)
   const x = TH_X + Math.cos(a) * r, z = TH_Z + Math.sin(a) * r
@@ -1099,6 +1099,15 @@ function placeTHTree() {
   const y = groundH(x, z)
   if (y < -0.25) return null
   return { x, y: y - 0.08, z, s: rand(0.75, 1.15), sx: rand(0.9, 1.1), sy: rand(0.95, 1.15) }
+}
+function placeTHFar() {                                      // outer ring of trees around the treehouse (fills the empty background)
+  const a = rand(0, Math.PI * 2), r = rand(18, 40)
+  const x = TH_X + Math.cos(a) * r, z = TH_Z + Math.sin(a) * r
+  if (Math.abs(x - pathX(z)) < PATH_HW + 3.2) return null
+  if (Math.abs(z + 35) < 6) return null
+  const y = groundH(x, z)
+  if (y < -0.25) return null
+  return { x, y: y - 0.08, z, s: rand(0.85, 1.4), sx: rand(0.9, 1.1), sy: rand(0.95, 1.2) }
 }
 function placeTHPlant() {
   const a = rand(0, Math.PI * 2), r = rand(5.5, 13)
@@ -1109,7 +1118,7 @@ function placeTHPlant() {
   if (y < -0.2) return null
   return { x, y: y - 0.02, z, s: rand(0.8, 1.5) }
 }
-/* ආරම්භක කොටසේ (පාර දෙපැත්තේ) ගස් ඝනව */
+/* dense trees on both sides of the road in the opening section */
 function placeStartTree() {
   const z = rand(20, -62)
   if (Math.abs(z + 35) < 4.5) return null
@@ -1121,7 +1130,7 @@ function placeStartTree() {
   if (y < -0.25) return null
   return { x, y: y - 0.08, z, s: rand(0.8, 1.25), sx: rand(0.9, 1.1), sy: rand(0.95, 1.2) }
 }
-function placeGapTree() {                                    // ආරම්භයේ ඉස්සරහ හිස් (මීදුම) කොටස පුරවන ගස්
+function placeGapTree() {                                    // trees filling the empty (misty) area in front at the start
   const z = rand(-12, -58)
   if (Math.abs(z + 35) < 4.5) return null
   const side = Math.random() < 0.55 ? -1 : 1
@@ -1131,7 +1140,7 @@ function placeGapTree() {                                    // ආරම්භ�
   if (y < -0.25) return null
   return { x, y: y - 0.08, z, s: rand(0.8, 1.3), sx: rand(0.9, 1.1), sy: rand(0.95, 1.2) }
 }
-function placeBackTree() {                                   // ඈතට පාරේ දෙපැත්තේ + පිටිපස්සේ (ඇය පිටුපස) ගස්
+function placeBackTree() {                                   // trees far along both sides of the road + behind her
   const z = rand(-20, -100)
   if (Math.abs(z + 35) < 4.5) return null
   const side = Math.random() < 0.5 ? -1 : 1
@@ -1225,7 +1234,7 @@ function placeFallRock() {
   const x = CX + dx
   return { x, y: groundH(x, z) - 0.1, z, s: rand(1.0, 2.0) }
 }
-function placeCliffRock() {                                  // දිය ඇල්ලේ පිටිපස්සේ ගල් බිත්තිය
+function placeCliffRock() {                                  // rock wall behind the waterfall
   const dx = rand(3.6, 36) * (Math.random() < 0.5 ? -1 : 1)
   const z = rand(WF - 2.5, WF + 1)
   const x = CX + dx
@@ -1264,13 +1273,13 @@ function makeLamp(h, glowSize = 1) {
   body.scale.setScalar(h)
   g.add(body)
   const y = h * SZ.lampLightY
-  const bulb = new THREE.Mesh(bulbGeo, bulbMat)               // දැල්වෙන බල්බය
+  const bulb = new THREE.Mesh(bulbGeo, bulbMat)               // the glowing bulb
   bulb.scale.setScalar(0.05 + 0.025 * h)
   bulb.position.y = y
   const halo = new THREE.Sprite(haloMat)
   halo.scale.setScalar(Math.max(1.1, h * 0.8) * glowSize)
   halo.position.y = y
-  const disc = new THREE.Mesh(lampDiscGeo, lampDiscMat)       // බිමේ ආලෝක කවය
+  const disc = new THREE.Mesh(lampDiscGeo, lampDiscMat)       // light circle on the ground
   disc.position.y = 0.07
   disc.scale.setScalar(Math.max(0.8, h * 0.55))
   g.add(bulb, halo, disc)
@@ -1295,9 +1304,9 @@ const PLAT_X = pathX(LAND_Z) + 1.8
 const PLAT_TOP = WATER_Y + 0.28
 const MOOR = { x: PLAT_X - 6.0, z: LAND_Z + 2, yaw: 0.12 }
 
-/* බෝට්ටුවේ ආසන (thwart) දෙක අතරට ඇයව තියනවා. නිවැරදි නැත්නම් game එකේ [ ] = ඉස්සරහට/පිටිපස්සට, - = = පහළට/උඩට */
+/* she sits between the two boat thwarts (seats). If wrong, in the game use [ ] = forward/back, - = = down/up */
 const SEAT = { z: 0, y: 0 }
-const SIT_DROP = 0.30           // ආසනයේ උඩ සිට ඇගේ පාද මූලය (origin) දක්වා පහළට (m). ඉඳගත් තැන නිවැරදි නැත්නම් - = යතුරු
+const SIT_DROP = 0.30           // drop from the top of the seat down to her foot origin (m). If the seating looks wrong, use the - = keys
 addEventListener('keydown', e => {
   let ch = true
   if (e.key === '[') SEAT.z -= 0.1
@@ -1305,7 +1314,7 @@ addEventListener('keydown', e => {
   else if (e.key === '-') SEAT.y -= 0.05
   else if (e.key === '=') SEAT.y += 0.05
   else ch = false
-  if (ch) console.log('SEAT =', JSON.stringify({ z: +SEAT.z.toFixed(2), y: +SEAT.y.toFixed(2) }), '(මේක SEAT const එකට දාන්න)')
+  if (ch) console.log('SEAT =', JSON.stringify({ z: +SEAT.z.toFixed(2), y: +SEAT.y.toFixed(2) }), '(paste this into the SEAT const)')
 })
 
 function measureBoatSeat(model) {
@@ -1324,14 +1333,14 @@ function measureBoatSeat(model) {
     if (hit.point.y < lo) lo = hit.point.y
   }
   if (!isFinite(lo) || samples.length < 4) return null
-  // ආසන = බෝට්ටුවේ මැද කොටසේ ඉහළට නෙරා ඇති තැන් (කොන් දෙක ඉවත්)
+  // seats = raised parts in the middle section of the boat (excluding the two ends)
   const seats = []
   let cur = null
   for (const sm of samples) {
     const up = sm.y - lo > 0.1 && Math.abs(sm.z) < L * 0.38
     if (up) { if (!cur) { cur = { a: sm.z, b: sm.z }; seats.push(cur) } else cur.b = sm.z } else cur = null
   }
-  /* ඇය ඉඳගන්නේ පිටිපස්ස (stern, +z) ආසනයේ. ආසනයේ උඩ මට්ටමෙන් ඇගේ ඉඳගත් උස අඩු කරලා */
+  /* she sits on the stern (+z) seat. Her seated height is lowered from the seat top level */
   const centers = seats.map(c => (c.a + c.b) / 2).sort((p, q) => q - p)
   let z = centers.length ? centers[0] : L * 0.24
   if (z < 0.3) z = L * 0.24
@@ -1349,8 +1358,8 @@ function buildBoat() {
     g.add(b)
     b.traverse(o => { if (!boatOarNode && /oar|paddle|paddel|\brow\b/i.test(o.name || '')) boatOarNode = o })
     const hid = []
-    b.traverse(o => { if (/oar|paddle|paddel|\brow\b/i.test(o.name || '')) { o.visible = false; hid.push(o.name) } })   // බෝට්ටුවේ තියෙන වෙනම හබල සඟවනවා (ඇයගේ හබල විතරක් පෙනෙන්න)
-    if (hid.length) console.log('boat එකේ හබල සඟවුවා:', hid)
+    b.traverse(o => { if (/oar|paddle|paddel|\brow\b/i.test(o.name || '')) { o.visible = false; hid.push(o.name) } })   // hide the boat's own oars (so only her paddle shows)
+    if (hid.length) console.log('Hid the built-in boat oars:', hid)
     boatOarNode = null
     const seat = measureBoatSeat(b)
     if (seat) boatSeat = seat
@@ -1414,7 +1423,7 @@ function buildPier() {
 }
 
 let bridgeRise = 0
-function archBridge(holder) {                              // පාලම මැදට උස් කරලා රවුම් කරනවා
+function archBridge(holder) {                              // raise the middle of the bridge and make it round
   holder.updateMatrixWorld(true)
   const out = new THREE.Group()
   const half = SZ.bridgeLen / 2
@@ -1524,8 +1533,8 @@ function buildLanding() {
    BUTTERFLIES
    ===================================================================== */
 const butterflies = []
-/* ගස් ගෙදර ඉදිකිරීම + ඉණිමගෙන් නගින ගමන් මාර්ගය */
-const TW = { a: 0.14, up: 0.30, pause: 0.24, down: 0.18 }       // detour එකේ කොටස් වල අනුපාත (ඉතිරිය = පාරට ආපසු)
+/* treehouse build + the walking route up the stairs */
+const TW = { a: 0.14, up: 0.30, pause: 0.24, down: 0.18 }       // proportions of the detour sections (the rest = back to the road)
 function makeRoute(pts) {
   const cum = [0]
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]))
@@ -1548,14 +1557,14 @@ function computeTH() {
   thSpeed()
   if (thDbg) { thDbg.children[0].position.copy(foot); thDbg.children[1].position.copy(top); thDbg.children[2].position.copy(deck) }
 }
-/* detour එක ඇතුළේ ඇය යන වේගය (m/s) ~ ඉණිමං නගිනකොට හෙමින්: scroll වේගය අඩු කරන සාධකය */
+/* her speed inside the detour (m/s), slow on the stairs: factor that reduces the scroll speed */
 function thSpeed() {
   if (!thWay) return
   const pathLen = thWay.P0.distanceTo(thWay.route.pts[0]) * 2 + thWay.route.total * 2
   thK = clamp(3.6 * (TH.s1 - TH.s0) / Math.max(pathLen, 1) / 8, 0.18, 1)
 }
 
-/* ---------- ඇත්තම ඉණිමග සොයාගැනීම: ගස් ගෙදර model එක මතින් raycast කරලා (උස සිතියමක්) පාරේ සිට ගෙයි බිම දක්වා පියගැට මාර්ගය BFS/Dijkstra වලින් හොයනවා ---------- */
+/* ---------- finding the real stairs: raycast over the treehouse model (height map), then find the step path from the road to the deck with BFS/Dijkstra ---------- */
 let thLine = null
 function drawRoute() {
   if (!thWay) return
@@ -1588,7 +1597,7 @@ function startRouteSearch() {
   const gx0 = Math.floor((box.min.x - 1) / CELL), gx1 = Math.ceil((box.max.x + 1) / CELL)
   const gz0 = Math.floor((box.min.z - 1) / CELL), gz1 = Math.ceil((box.max.z + 1) / CELL)
   const nx = gx1 - gx0 + 1, nz = gz1 - gz0 + 1
-  const cellsY = new Array(nx * nz)                 // ඒ ඒ කොටුවේ පාවිච්චි කළ හැකි උස (බිම + ගෙදර මතුපිට)
+  const cellsY = new Array(nx * nz)                 // usable height of each cell (ground + house surface)
   const ray = new THREE.Raycaster()
   ray.firstHitOnly = false
   const down = new THREE.Vector3(0, -1, 0)
@@ -1608,7 +1617,7 @@ function startRouteSearch() {
       ray.set(o, down)
       const hits = ray.intersectObject(thHolder, true)
       for (const h of hits) {
-        if (!h.face || h.object.userData.leaf) continue                  // කොළ / ගහේ මතුපිට නගින්නේ නැහැ (පියගැට විතරයි)
+        if (!h.face || h.object.userData.leaf) continue                  // she does not climb leaves / the tree surface (only steps)
         nrm.copy(h.face.normal).transformDirection(h.object.matrixWorld)
         if (nrm.y < 0.6) continue
         const y = h.point.y
@@ -1633,11 +1642,11 @@ function finishRouteSearch(token, G) {
     const ix = c % nx, iz = (c / nx) | 0
     cellNodes[c] = cellsY[c].map(y => { nodes.push({ c, ix, iz, y, d: Infinity, p: -1, id: nodes.length }); return nodes.length - 1 })
   }
-  // source = පාරේ ලක්ෂ්‍යයට ළඟම බිම කොටුව
+  // source = ground cell nearest to the road point
   const P0 = thWay.P0
   const six = clamp(Math.round(P0.x / CELL) - gx0, 0, nx - 1), siz = clamp(Math.round(P0.z / CELL) - gz0, 0, nz - 1)
   const src = cellNodes[siz * nx + six][0]
-  // Dijkstra (සරල heap)
+  // Dijkstra (simple heap)
   const heap = []
   const push = id => { heap.push(id); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (nodes[heap[p]].d <= nodes[heap[i]].d) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p } }
   const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { let l = 2 * i + 1, r = l + 1, m = i; if (l < heap.length && nodes[heap[l]].d < nodes[heap[m]].d) m = l; if (r < heap.length && nodes[heap[r]].d < nodes[heap[m]].d) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m } } return top }
@@ -1665,7 +1674,7 @@ function finishRouteSearch(token, G) {
       }
     }
   }
-  const findDeck = () => {                           // ගෙයි බිම මට්ටම + ඒ මත ළඟම "මැද" ලක්ෂ්‍යය
+  const findDeck = () => {                           // deck level + the nearest "middle" point on it
     const bins = new Map()
     for (const n of nodes) {
       if (!isFinite(n.d) || n.y < gRef + 1.2 || n.y > gRef + TH.height * 0.55) continue
@@ -1693,12 +1702,12 @@ function finishRouteSearch(token, G) {
   const steps = g => { let c = 0; for (let id = g; nodes[id].p >= 0; id = nodes[id].p) if (Math.abs(nodes[id].y - nodes[nodes[id].p].y) >= 0.13) c++; return c }
   runDij(null)
   let goal = findDeck()
-  if (goal < 0) { console.warn('⚠ ගෙයි බිම (deck) / ඉණිමං මාර්ගය auto හොයාගන්න බැරි වුනා. T / Y යතුරු හෝ thTune() පාවිච්චි කරන්න.'); thDoneResolve && thDoneResolve(); return }
-  if (steps(goal) < 3) {                              // ඉණිමං පියගැට නෙමෙයි, බෑවුම් (ramp) එකක් තෝරගත්තා නම්: බෑවුම් වලට ඉඩ දෙන්නේ නැතිව ආයෙ හොයනවා
+  if (goal < 0) { console.warn('⚠ Could not auto-detect the treehouse deck / stair route. Use the T / Y keys or thTune().'); thDoneResolve && thDoneResolve(); return }
+  if (steps(goal) < 3) {                              // if a ramp was picked instead of real stairs: search again without allowing ramps
     const yDp = yD
     runDij((n, m, dy) => { const hi = Math.max(n.y, m.y); if (hi < gRef + 0.3 || hi > yDp - 0.3) return true; const a = Math.abs(dy); return a < 0.03 || a >= 0.13 })
     const g2 = findDeck()
-    if (g2 >= 0 && steps(g2) >= 3) { goal = g2; console.log('ඉණිමං පියගැට (ramp නොවේ) තෝරාගත්තා') }
+    if (g2 >= 0 && steps(g2) >= 3) { goal = g2; console.log('Picked real stairs (not a ramp)') }
     else { runDij(null); goal = findDeck() }
   }
   const makeAuto = (goal, allowOrient) => {
@@ -1706,7 +1715,7 @@ function finishRouteSearch(token, G) {
   for (let id = goal; id >= 0; id = nodes[id].p) chain.push(id)
   chain.reverse()
   let pts = chain.map(id => new THREE.Vector3((gx0 + nodes[id].ix) * CELL, nodes[id].y, (gz0 + nodes[id].iz) * CELL))
-  /* ඉණිමග පාර පැත්තට හැරෙන්න ගස් ගෙදර ඉබේම කරකවනවා (එක් වරක්) */
+  /* rotate the treehouse automatically so the stairs face the road (once) */
   if (allowOrient && !thOriented) {
     thOriented = true
     let fi = pts.findIndex(p => p.y > gRef + 0.25); if (fi < 0) fi = 0
@@ -1720,7 +1729,7 @@ function finishRouteSearch(token, G) {
       dl = Math.atan2(Math.sin(dl), Math.cos(dl))
       if (Math.abs(dl) > 0.26) {
         TH.yaw = (TH.yaw + dl * 180 / Math.PI + 360) % 360
-        console.log('ගස් ගෙදර ඉණිමග පාර පැත්තට කරකැවුවා, yaw =', TH.yaw.toFixed(0))
+        console.log('Rotated the treehouse so the stairs face the road, yaw =', TH.yaw.toFixed(0))
         thAuto = null
         computeTH()
         startRouteSearch()
@@ -1728,7 +1737,7 @@ function finishRouteSearch(token, G) {
       }
     }
   }
-  /* පියගැට මැදටම: පාර දෙපැත්තට පියගැටයේ පළල මැන මැදට ගන්නවා (කෙළවරින් නොයන්න) */
+  /* centre on the steps: measure the step width on both sides and take the middle (do not walk on the edge) */
   const walk = (x, z, y) => {
     const ix = Math.round(x / CELL) - gx0, iz = Math.round(z / CELL) - gz0
     if (ix < 0 || iz < 0 || ix >= nx || iz >= nz) return false
@@ -1739,7 +1748,7 @@ function finishRouteSearch(token, G) {
     const a = orig[Math.max(0, i - 3)], b = orig[Math.min(orig.length - 1, i + 3)]
     let tx = b.x - a.x, tz = b.z - a.z
     const tl = Math.hypot(tx, tz)
-    if (tl < 0.3 || (b.y - a.y) / tl < 0.15) continue          // පියගැට නොවන තැන් නැහැ
+    if (tl < 0.3 || (b.y - a.y) / tl < 0.15) continue          // skip places that are not steps
     tx /= tl; tz /= tl
     const px = -tz, pz = tx, p = orig[i]
     let plus = 0, minus = 0
@@ -1748,7 +1757,7 @@ function finishRouteSearch(token, G) {
     const off = (plus - minus) / 2
     pts[i].x = p.x + px * off; pts[i].z = p.z + pz * off
   }
-  for (let pass = 0; pass < 2; pass++) {               // සුමට කිරීම
+  for (let pass = 0; pass < 2; pass++) {               // smoothing
     const q = pts.map(p => p.clone())
     for (let i = 1; i < pts.length - 1; i++) {
       const w = Math.min(3, i, pts.length - 1 - i)
@@ -1758,12 +1767,12 @@ function finishRouteSearch(token, G) {
     }
     pts = q
   }
-  // ලක්ෂ්‍ය අඩු කිරීම (සෑම ~0.4m කට එකක්)
+  // reduce points (one per ~0.4m)
   const thin = [pts[0]]
   for (let i = 1; i < pts.length - 1; i++) if (pts[i].distanceTo(thin[thin.length - 1]) > 0.38) thin.push(pts[i])
   thin.push(pts[pts.length - 1])
   const stand = thin[thin.length - 1].clone()
-  // camera දිශාව: ගස් ගෙදර අවහිර නොවන, පාර පැත්ත වැඩිපුර
+  // camera direction: toward the road side, not blocked by the treehouse
   const toRoad = new THREE.Vector3(pathX(stand.z) - stand.x, 0, 0)
   if (toRoad.lengthSq() < 1e-4) toRoad.set(0, 0, 1)
   toRoad.normalize()
@@ -1784,7 +1793,7 @@ function finishRouteSearch(token, G) {
   const A = makeAuto(goal, true)
   if (A === 'restart') return
   const routes = [A]
-  /* දෙවෙනි ඉණිමං මාර්ගය (වෙනත් පියගැට/බෑවුම): පළමු මාර්ගයේ මැද කොටස අවහිර කරලා ආයෙ හොයනවා */
+  /* second stair route (other steps / ramp): block the middle of the first route and search again */
   const blocked = new Set()
   for (const id of A.chain) {
     const n = nodes[id]
@@ -1802,35 +1811,35 @@ function finishRouteSearch(token, G) {
     const B = makeAuto(g2, false)
     if (B && B !== 'restart') routes.push(B)
   }
-  if (thManual) routes.push(thManual)                    // අතින් දුන් (පරණ) මාර්ගයත් විකල්පයක් ලෙස
+  if (thManual) routes.push(thManual)                    // manually given (old) route as an extra option
   thRoutes = routes
   const saved = parseInt(lsGet('thRoute2'))
-  thRouteIdx = Number.isFinite(saved) && saved >= 0 && saved < routes.length ? saved : 0          // default = 1 වෙනි (ඔයා හරි කියපු) මාර්ගය   // N යතුරෙන් මාරු කරන්න; තෝරපු එක මතක තියාගන්නවා
+  thRouteIdx = Number.isFinite(saved) && saved >= 0 && saved < routes.length ? saved : 0          // default = first route   // switch with the N key; the chosen one is remembered
   thAuto = routes[thRouteIdx]
   applyAutoRoute()
   thSpeed()
   setupTHLights()
-  console.log(`✔ ඉණිමං මාර්ග ${routes.length}ක් (1,2 = auto, 3 = අතින් දුන්) හම්බුනා. දැන් ${thRouteIdx + 1} වෙනි (N = මාරු කරන්න, T = මාර්ගය පෙන්වන්න). දිග ${thWay.route.total.toFixed(1)}m`)
+  console.log(`✔ Found ${routes.length} stair routes (1,2 = auto, 3 = manual). Now using #${thRouteIdx + 1} (N = switch, T = show route). Length ${thWay.route.total.toFixed(1)}m`)
   if (thDbg) { thDbg.children[0].position.copy(thWay.foot); thDbg.children[1].position.copy(thWay.top); thDbg.children[2].position.copy(thWay.deck) }
   thDoneResolve && thDoneResolve()
 }
 let thRoutes = [], thRouteIdx = 0, thManual = null
 let thDoneResolve = null
-const thDone = new Promise(r => { thDoneResolve = r })       // ඉණිමං මාර්ග සෙවීම ඉවර වෙනකම් loading තිරය තියනවා (පළමු වතාවෙත් හරි මාර්ගයෙන් නගින්න)
+const thDone = new Promise(r => { thDoneResolve = r })       // keep the loading screen until the stair route search finishes (so the first climb uses the right route)
 const lsGet = k => { try { return localStorage.getItem(k) } catch (e) { return null } }
 const lsSet = (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} }
-let thLamp = null, thOriented = false     // ඉණිමග පාර පැත්තට ඉබේම කරකැවෙනවා (Y යතුරෙන් අතින් ද කරකවන්න පුළුවන්)
+let thLamp = null, thOriented = false     // the stairs rotate toward the road automatically (can also be rotated by hand with Y)
 const thCenter = new THREE.Vector3()
 function setupTHLights() {
   if (!thWay) return
   const st = thWay.deck
   const perp = new THREE.Vector3(-thWay.camDir.z, 0, thWay.camDir.x)
   if (thLamp) { scene.remove(thLamp); lampGroups.splice(lampGroups.indexOf(thLamp), 1) }
-  thLamp = placeLamp(st.x + perp.x * 1.1, st.y, st.z + perp.z * 1.1, 1.0, false)     // ගෙයි බිමේ lantern එක (දැල්වෙන)
+  thLamp = placeLamp(st.x + perp.x * 1.1, st.y, st.z + perp.z * 1.1, 1.0, false)     // lantern on the deck (glowing)
   thLamp.userData.keep = true
 }
 
-/* treehouse.gltf load වුනේ නැත්නම් (bin/texture නැති නිසා) ඒ වෙනුවට මේ ගස් ගෙදර හදනවා: ඉණිමග + බිම + කුටිය + ජනෙල් */
+/* if treehouse.gltf did not load (missing bin/textures), build this treehouse instead: stairs + floor + cabin + windows */
 function procTreehouse() {
   const g = new THREE.Group()
   const wood = new THREE.MeshStandardMaterial({ color: '#7a5636', roughness: 0.95 })
@@ -1839,26 +1848,26 @@ function procTreehouse() {
   const leaf = new THREE.MeshStandardMaterial({ color: '#2f5f3c', roughness: 1 })
   const win = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.72, 0.28).multiplyScalar(1.25) })
   const add = (geo, mat, x, y, z, ry = 0, rx = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, 0); g.add(m); return m }
-  add(new THREE.CylinderGeometry(0.7, 1.05, 9, 10), bark, 0, 4.5, 0)                            // කඳ
-  add(new THREE.ConeGeometry(3.6, 4.2, 9), leaf, 0, 7.2, 0)                                      // කොළ
+  add(new THREE.CylinderGeometry(0.7, 1.05, 9, 10), bark, 0, 4.5, 0)                            // trunk
+  add(new THREE.ConeGeometry(3.6, 4.2, 9), leaf, 0, 7.2, 0)                                      // leaves
   add(new THREE.ConeGeometry(2.6, 3.8, 9), leaf, 0, 9.5, 0)
   add(new THREE.ConeGeometry(1.5, 2.8, 9), leaf, 0, 11.1, 0)
-  add(new THREE.BoxGeometry(5.6, 0.3, 5.6), wood, 0, 2.95, 0)                                   // ගෙයි බිම (උඩ = 3.1)
+  add(new THREE.BoxGeometry(5.6, 0.3, 5.6), wood, 0, 2.95, 0)                                   // deck floor (top = 3.1)
   for (const [x, z] of [[-2.5, -2.5], [2.5, -2.5], [-2.5, 2.5], [2.5, 2.5]]) add(new THREE.CylinderGeometry(0.14, 0.14, 3, 6), wood, x, 1.5, z)
-  add(new THREE.BoxGeometry(3.2, 2.4, 3.2), wood, 0, 4.3, -0.8)                                  // කුටිය
-  add(new THREE.ConeGeometry(2.9, 1.7, 4), roofM, 0, 6.35, -0.8, Math.PI / 4)                    // වහලය
-  add(new THREE.BoxGeometry(0.75, 0.95, 0.06), win, 0.8, 4.3, 0.83)                              // ජනේල
+  add(new THREE.BoxGeometry(3.2, 2.4, 3.2), wood, 0, 4.3, -0.8)                                  // cabin
+  add(new THREE.ConeGeometry(2.9, 1.7, 4), roofM, 0, 6.35, -0.8, Math.PI / 4)                    // roof
+  add(new THREE.BoxGeometry(0.75, 0.95, 0.06), win, 0.8, 4.3, 0.83)                              // window
   add(new THREE.BoxGeometry(0.75, 0.95, 0.06), win, -0.8, 4.3, 0.83)
-  for (const x of [-2.7, 2.7]) add(new THREE.BoxGeometry(0.07, 0.07, 5.6), wood, x, 4.0, 0)       // රේල්
+  for (const x of [-2.7, 2.7]) add(new THREE.BoxGeometry(0.07, 0.07, 5.6), wood, x, 4.0, 0)       // rails
   add(new THREE.BoxGeometry(3.2, 0.07, 0.07), wood, -1.1, 4.0, 2.7)
-  const N = 12                                                                                    // ඉණිමං පියගැට: z = 7.2 (බිම) → 2.7 (බිම මට්ටම 3.1)
+  const N = 12                                                                                    // stair steps: z = 7.2 (ground) to 2.7 (ground level 3.1)
   for (let i = 0; i < N; i++) add(new THREE.BoxGeometry(1.1, 0.1, 0.42), wood, 1.6, 3.1 * (i + 1) / N - 0.05, 7.2 - 4.5 * (i + 0.5) / N)
   const th = Math.atan2(3.1, 4.5)
   for (const dx of [-0.55, 0.55]) add(new THREE.BoxGeometry(0.1, 0.2, Math.hypot(4.5, 3.1)), wood, 1.6 + dx, 1.55, 4.95, 0, th)
   g.updateMatrixWorld(true)
   const b = new THREE.Box3().setFromObject(g), s = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3())
   const fx = x => (x - c.x) / (s.x / 2), fz = z => (z - c.z) / (s.z / 2)
-  Object.assign(TH, {                                                                              // ඉණිමං ලක්ෂ්‍ය (බිම / මුදුන / ගෙයි බිම) මේකට ගැලපෙන්න
+  Object.assign(TH, {                                                                              // stair points (foot / top / deck) matched to this
     stairFoot: [fx(1.6), fz(7.0)], stairTop: [fx(1.6), fz(2.9)],
     deckY: (3.15 - b.min.y) / s.y, deck: [fx(0.8), fz(1.7)], yaw: 0
   })
@@ -1867,18 +1876,18 @@ function procTreehouse() {
 
 function buildTreehouse(gltf) {
   thHolder = fitProp(gltf ? gltf.scene : procTreehouse(), { height: TH.height })
-  if (!gltf) console.warn('treehouse.gltf නැති නිසා ගොඩනගපු ගස් ගෙදර භාවිතා කරනවා')
+  if (!gltf) console.warn('treehouse.gltf not found, using the built-in treehouse')
   thHolder.position.set(TH_X, -0.05, TH_Z)
   scene.add(thHolder)
   thDbg = new THREE.Group()
-  for (const c of [0xff3030, 0xffd030, 0x30ff60]) {                // ඉණිමං පාමුල / මුදුන / ගෙයි බිම (T ඔබලා බලන්න)
+  for (const c of [0xff3030, 0xffd030, 0x30ff60]) {                // stair foot / top / deck (press T to see)
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshBasicMaterial({ color: c, depthTest: false }))
     m.renderOrder = 999
     thDbg.add(m)
   }
   thDbg.visible = false
   scene.add(thDbg)
-  /* දිලිසෙන කළු ලෝහ පෙනුම නැතිකරනවා: matte, ස්වභාවික දැව පාට */
+  /* remove the shiny black metal look: matte, natural wood colour */
   thHolder.traverse(o => {
     if (!o.isMesh) return
     ;(Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
@@ -1891,7 +1900,7 @@ function buildTreehouse(gltf) {
     })
     o.castShadow = false; o.receiveShadow = false
   })
-  /* ගස් කොළ කොළ පාට (කොළ වලට green) */
+  /* tree leaves green (make leaves green) */
   const hb = new THREE.Box3().setFromObject(thHolder)
   hb.getCenter(thCenter); thCenter.y = hb.min.y
   const Hh = hb.max.y - hb.min.y
@@ -1916,12 +1925,12 @@ function buildTreehouse(gltf) {
   })
   computeTH()
   startRouteSearch()
-  console.log('✔ tree house placed. Keys: T = ඉණිමං ලක්ෂ්‍ය පෙන්වන්න, Y = 90° කරකවන්න. Console: thTune({ stairFoot:[x,z], stairTop:[x,z], deckY, deck:[x,z] })')
+  console.log('✔ tree house placed. Keys: T = show stair points, Y = rotate 90°. Console: thTune({ stairFoot:[x,z], stairTop:[x,z], deckY, deck:[x,z] })')
 }
 window.thTune = (o = {}) => { Object.assign(TH, o); computeTH(); console.log('TH =', JSON.stringify(TH)) }
 addEventListener('keydown', e => {
   const k = e.key.toLowerCase()
-  if (k === 'n' && thRoutes.length > 1) { thRouteIdx = (thRouteIdx + 1) % thRoutes.length; thAuto = thRoutes[thRouteIdx]; applyAutoRoute(); thSpeed(); setupTHLights(); lsSet('thRoute2', thRouteIdx); console.log('ඉණිමං මාර්ගය', thRouteIdx + 1, '/', thRoutes.length, 'තෝරාගත්තා (මතක තියාගන්නවා)') }
+  if (k === 'n' && thRoutes.length > 1) { thRouteIdx = (thRouteIdx + 1) % thRoutes.length; thAuto = thRoutes[thRouteIdx]; applyAutoRoute(); thSpeed(); setupTHLights(); lsSet('thRoute2', thRouteIdx); console.log('Stair route', thRouteIdx + 1, '/', thRoutes.length, 'selected (remembered)') }
   else if (k === 't' && thDbg) { thDbg.visible = !thDbg.visible; if (thLine) thLine.visible = thDbg.visible }
   else if (k === 'y' && thHolder) { TH.yaw = (TH.yaw + 90) % 360; thOriented = true; thAuto = null; computeTH(); startRouteSearch(); console.log('TH.yaw =', TH.yaw) }
 })
@@ -1968,7 +1977,7 @@ function thDetour(u) {
   return o
 }
 
-/* සමනලුන් ස්වභාවිකව පෙනෙන්න (අඳුරු වෙන්නේ නැතිව) */
+/* make butterflies look natural (not dark) */
 function brightenFly(root) {
   root.traverse(o => {
     if (!o.isMesh) return
@@ -1976,7 +1985,7 @@ function brightenFly(root) {
       if (!m) return
       m.side = THREE.DoubleSide
       if (m.emissive) {
-        if (m.map) { m.emissiveMap = m.map; m.emissive.setRGB(1, 1, 1) } else m.emissive.setRGB(0.25, 0.25, 0.25)   // ස්වභාවික පාට (halo / කහ ආලෝකය නැහැ)
+        if (m.map) { m.emissiveMap = m.map; m.emissive.setRGB(1, 1, 1) } else m.emissive.setRGB(0.25, 0.25, 0.25)   // natural colour (no halo / yellow light)
         m.emissiveIntensity = 0
       }
       m.needsUpdate = true
@@ -2009,7 +2018,7 @@ function buildButterflies() {
   wingGeo.translate(0.1, 0, 0)
   for (let i = 0; i < COUNT.butterflies; i++) {
     const g = new THREE.Group()
-    /* සමනලුන් හැමතැනම නැහැ: කොටස් 3 කදී විතරක් (ආරම්භය / ගඟ අසල පාර / අවසානය), ඇය ළඟින්ම පොඩි ගාණක් */
+    /* butterflies are not everywhere: only in 3 sections (start / road near the river / end), a few close to her */
     const zone = i < 4 ? [0, 34] : i < 6 ? [60, 96] : [LAND_S - 8, MAX_PROGRESS + 6]
     const u = {
       ph: rand(0, 6.28), sp: rand(0.5, 0.9), zone,
@@ -2028,7 +2037,7 @@ function buildButterflies() {
         a.timeScale = rand(0.8, 1.3)
         a.time = rand(0, 1)
         a.play()
-      } else u.flap = fitted                 // animation නැත්නම් පියාපත් සෙලවීම අපි කරනවා
+      } else u.flap = fitted                 // if there is no animation, we flap the wings ourselves
     } else {
       const c = palette[i % palette.length]
       const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(c[0], c[1], c[2]), side: THREE.DoubleSide })
@@ -2046,14 +2055,14 @@ function buildButterflies() {
 }
 
 /* =====================================================================
-   BUILD WORLD  (පළමුව අත්‍යවශ්‍ය දේවල්, ඉන්පසු කුඩා පැළ/moss/සමනලුන් පසුබිමේ load වෙනවා)
+   BUILD WORLD  (essentials first, then small plants / moss / butterflies load in the background)
    ===================================================================== */
 async function buildWorld() {
   const [treeG, rockG, boatG, lampG, bridgeG, dockG, waterG, floorG, rock3, thG, thFbx] = await Promise.all([
     tryLoadList(FILES.trees), tryLoadList(FILES.rocks),
     tryLoadFirst(FILES.boat), tryLoadFirst(FILES.lamp), tryLoadFirst(FILES.bridge), tryLoadFirst(FILES.dock),
     tryLoadFirst(FILES.water), tryLoadFirst(FILES.floor), loadFbxSafe(ROCK_FBX),
-    tryLoadFirst(FILES.treehouse), loadFbxSafe('treehouse.fbx')          // treehouse.fbx තියෙනවා නම් ඒක පළමුව
+    tryLoadFirst(FILES.treehouse), loadFbxSafe('treehouse.fbx')          // if treehouse.fbx exists, use it first
   ])
   console.log('Assets found:', { trees: treeG.length, rocks: rockG.length, boat: !!boatG, lamp: !!lampG, bridge: !!bridgeG, dock: !!dockG, water: !!waterG, floor: !!floorG, rock3: !!rock3, treehouse: !!thG })
 
@@ -2068,7 +2077,7 @@ async function buildWorld() {
 
   if (floorG) applyFloor(floorG)
 
-  /* ---- ගස් ---- */
+  /* ---- trees ---- */
   const pineLeaf = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 })
   const pineTrunk = new THREE.MeshStandardMaterial({ color: '#2e2118', roughness: 1 })
   addWind(pineLeaf, 8, 1.1)
@@ -2096,20 +2105,27 @@ async function buildWorld() {
     pines(COUNT.treeNear, placeTreeNear)
     pines(COUNT.treeFar, placeTreeFar)
   }
-  /* ගඟ / pool එක අවට පොඩි ගස් */
-  if (treeG.length) treeG.forEach(g => scatterGLTF(g, { height: 3.4, count: Math.ceil(pick(70, 160) / treeG.length), place: placeBabyTree, wind: 1.4, tint: true }))
+  /* small trees around the river / pool */
+  if (treeG.length) treeG.forEach(g => scatterGLTF(g, { height: SZ.tree * 0.5, count: Math.ceil(pick(60, 130) / treeG.length), place: placeBabyTree, wind: 1.4, tint: true }))
   else pines(pick(70, 160), () => { const p = placeBabyTree(); if (p) p.s *= 0.4; return p })
-  /* ගස් ගෙදර වටේ ගස් */
+  /* trees around the treehouse */
   if (treeG.length) treeG.forEach(g => scatterGLTF(g, { height: SZ.tree * 0.85, count: Math.ceil(pick(16, 34) / treeG.length), place: placeTHTree, wind: 1.4, tint: true }))
   else pines(pick(14, 30), () => { const p = placeTHTree(); if (p) p.s *= 1.0; return p })
 
-  /* ---- ගල් (models වලින්) ---- */
+  /* extra trees: opening section, both sides of the road */
+  const extraTrees = [[placeStartTree, pick(60, 130), 1], [placeGapTree, pick(60, 130), 1.05]]
+  for (const [pl, n, k] of extraTrees) {
+    if (treeG.length) treeG.forEach(g => scatterGLTF(g, { height: SZ.tree * k, count: Math.ceil(n / treeG.length), place: pl, wind: 1.4, tint: true }))
+    else pines(n, () => { const p = pl(); if (p) p.s *= k; return p })
+  }
+
+  /* ---- rocks (from models) ---- */
   if (rockSources.length) {
     scatterRocks(SZ.rockBank, COUNT.bankRocks, placeBankRock)
     scatterRocks(SZ.rockPath, COUNT.pathRocks, placePathRock)
     scatterRocks(SZ.fenceFall, 18, placeFallRock, true)
     scatterRocks(SZ.fenceSmall, 30, placeSmallFence)
-    buildCliffRocks(props.rock3 || rockSources[0])           // දිය ඇල්ල පිටිපස්සේ ස්වභාවික ගල් බිත්තිය
+    buildCliffRocks(props.rock3 || rockSources[0])           // natural rock wall behind the waterfall
   } else {
     const geos = [makeRockGeo(1), makeRockGeo(4.2), makeRockGeo(7.7)]
     const procRocks = (count, place) => {
@@ -2121,17 +2137,17 @@ async function buildWorld() {
     procRocks(28, placeFallRock)
   }
 
-  /* ---- ඉදිකිරීම් ---- */
+  /* ---- buildings ---- */
   buildBridge()
   buildPier()
   buildLanding()
   boat = buildBoat()
   if (waterG) buildWaterTiles(waterG)
-  buildTreehouse(thFbx ? { scene: thFbx } : (thG || null))      // පරණ treehouse.fbx පළමුව, නැත්නම් treehouse.glb/gltf
+  buildTreehouse(thFbx ? { scene: thFbx } : (thG || null))      // old treehouse.fbx first, otherwise treehouse.glb/gltf
 
-  /* ---- Lamps: පාර දෙපැත්තේ සහ ගඟ ඉවුරේ ---- */
+  /* ---- Lamps: along both sides of the road and the river bank ---- */
   let side = 1
-  for (let z = -6; z > -44 - S1; z -= 22) {                  // lamp ටික (තැනින් තැන විතරයි)
+  for (let z = -6; z > -44 - S1; z -= 22) {                  // lamps (only here and there)
     if (Math.abs(z + 35) < 6) continue
     const x = pathX(z) + side * (PATH_HW + 0.5)
     placeLamp(x, groundH(x, z), z)
@@ -2143,14 +2159,14 @@ async function buildWorld() {
     side *= -1
   }
 
-  /* chapter (නැවතුම්) එකක් ළඟ lantern එකක් (card එක එහි සිට පෙනේ) */
+  /* a lantern near each chapter (stop) so its card can be seen from there */
   CHAPTERS.forEach(c => {
     if (c.noCard || c.th) return
     const sp = lampSpot(c)
     if (sp) placeLamp(sp.x, sp.y, sp.z, 2.2)
   })
 
-  await Promise.race([thDone, new Promise(r => setTimeout(r, 25000))])        // ඉණිමං මාර්ගය හොයාගන්නකම් (උපරිම තත්පර 25)
+  await Promise.race([thDone, new Promise(r => setTimeout(r, 25000))])        // until the stair route is found (max 25 seconds)
   loadingEl.style.opacity = 0
   setTimeout(() => loadingEl.remove(), 1200)
   window.forestReady && window.forestReady()
@@ -2180,8 +2196,9 @@ async function buildExtras() {
   }
   const smallSrc = [...plantG, ...grassG]
   smallSrc.forEach(g => scatterGLTF(g, { height: SZ.smallPlant, count: Math.ceil(COUNT.smallPlants / smallSrc.length), place: placeSmallPlant, wind: 1.8, tint: true }))
-  // පාර දෙපැත්තේ (ඇය ඇවිදින තැන වටේ) කුඩා පැළ තව එකතු කරනවා
+  // add more small plants on both sides of the road (around where she walks)
   smallSrc.forEach(g => scatterGLTF(g, { height: SZ.smallPlant * 1.15, count: Math.ceil(pick(320, 800) / smallSrc.length), place: placePathEdgePlant, wind: 1.8, tint: true }))
+  smallSrc.forEach(g => scatterGLTF(g, { height: SZ.smallPlant * 1.2, count: Math.ceil(pick(260, 650) / smallSrc.length), place: placeStartSmall, wind: 1.8, tint: true }))
   smallSrc.forEach(g => scatterGLTF(g, { height: SZ.smallPlant * 1.3, count: Math.ceil(pick(380, 900) / smallSrc.length), place: placeRiverPlant, wind: 1.8, tint: true }))
   smallSrc.forEach(g => scatterGLTF(g, { height: SZ.smallPlant * 1.5, count: Math.ceil(pick(150, 340) / smallSrc.length), place: placePoolPlant, wind: 1.8, tint: true }))
   smallSrc.forEach(g => scatterGLTF(g, { height: SZ.smallPlant * 1.4, count: Math.ceil(pick(110, 260) / smallSrc.length), place: placeTHPlant, wind: 1.8, tint: true }))
@@ -2219,7 +2236,7 @@ async function initCharacter() {
     const names = ['Walking', 'Waving', 'Talking', 'Paddling']
     const missing = []
     let lastErr = ''
-    /* එක් එක් file එක වෙන වෙනම load කරනවා (එකක් නැති වුනාට ඇය නැති වෙන්නේ නැහැ). Linux/Vercel වල ලොකු-පොඩි අකුරු වැදගත් නිසා lowercase නමත් උත්සාහ කරනවා */
+    /* load each file separately (if one is missing she still appears). Names are case-sensitive on Linux/Vercel, so the lowercase name is tried too */
     const grab = async (file, optional = false) => {
       for (const f of [file, file.toLowerCase()]) {
         try { return await fbxLoader.loadAsync(encodeURI(`${BASE}${f}`)) } catch (e) { lastErr = (e && (e.message || e.type || e.target && e.target.status)) || String(e); console.warn('FBX load fail:', f, e) }
@@ -2235,15 +2252,15 @@ async function initCharacter() {
     if (idleFbx) shrinkObj(idleFbx, MAXT, LITE)
     if (stairsFbx) stairsFbx.animations.forEach(lockRoot)
     const hasSkin = o => { let f = false; o.traverse(c => { if (c.isSkinnedMesh) f = true }); return f }
-    girl = [...fbxs, idleFbx, stairsFbx].find(f => f && hasSkin(f)) || null       // skin (මෝස්තරය) තියෙන පළමු file එක ඇයගේ ශරීරය
+    girl = [...fbxs, idleFbx, stairsFbx].find(f => f && hasSkin(f)) || null       // the first file with a skin is her body
     if (!girl) {
-      const msg = 'ඇයගේ model එක load වුනේ නැහැ. public/ ඇතුලේ Walking.fbx (skin එක්ක) තියෙනවද බලන්න. නැති file: ' + (missing.join(', ') || 'Walking.fbx')
+      const msg = 'Her model failed to load. Check that public/ contains Walking.fbx (with skin). Missing files: ' + (missing.join(', ') || 'Walking.fbx')
       console.warn(msg)
       showErr(msg)
       return
     }
-    if (missing.length) { console.warn('public/ ඇතුලේ නැති animation files:', missing) }
-    shrinkObj(girl, pick(512, 1024), false)            // ඇයගේ texture (phone වල 512)
+    if (missing.length) { console.warn('Animation files missing from public/:', missing) }
+    shrinkObj(girl, pick(512, 1024), false)            // her textures (512 on phones)
     fbxs.forEach(f => f && f.animations.forEach(lockRoot))
     if (idleFbx) idleFbx.animations.forEach(lockRoot)
     girl.scale.setScalar(1)
@@ -2252,7 +2269,7 @@ async function initCharacter() {
     let k = size.y > 0.001 ? CHAR_HEIGHT / size.y : 0.01
     if (k < 0.0005 || k > 0.1) k = 0.01
     girl.scale.setScalar(k)
-    /* FBX (Phong) මැටීරියල් => PBR වලට හරවනවා: ආලෝකයට ස්වභාවිකව ප්‍රතිචාර දක්වනවා, සුදු/දිලිසෙන ගතිය නැතිවෙනවා */
+    /* convert FBX (Phong) materials to PBR: they react to light naturally, no white / shiny look */
     const toStd = m => {
       if (!m || m.isMeshStandardMaterial) return m
       try {
@@ -2299,14 +2316,14 @@ function play(name, timeScale = 1) {
   current = name
 }
 
-/* ---------- හබල (paddle): ඇයගේ අතේ සිට දිය තෙක්. Paddling animation එකත් එක්ක දියට ඇතුල් වෙලා / උඩට ඇදලා, ripple + splash ---------- */
+/* ---------- paddle: from her hand to the water. With the Paddling animation it enters the water / lifts out, with ripple + splash ---------- */
 let paddle = null, handR = null
 function makeProcPaddle() {
   const g = new THREE.Group()
   const wood = new THREE.MeshStandardMaterial({ color: '#a56d3c', roughness: 0.8 })
   const dark = new THREE.MeshStandardMaterial({ color: '#6b4429', roughness: 0.9 })
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 1.9, 8), wood)
-  shaft.position.y = -0.7                                   // මුදුන +0.25 සිට පහළ -1.65 දක්වා
+  shaft.position.y = -0.7                                   // from top +0.25 down to -1.65
   const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), dark)
   knob.position.y = 0.27
   const blade = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.74, 0.035), wood)
@@ -2314,7 +2331,7 @@ function makeProcPaddle() {
   g.add(shaft, knob, blade)
   return g
 }
-const PADDLE_L = 1.65                                       // අතේ සිට හබල අග දක්වා (m)
+const PADDLE_L = 1.65                                       // from the hand to the paddle tip (m)
 
 const ripples = []
 const RIPN = 10
@@ -2383,20 +2400,20 @@ function updatePaddle(dt, riding, byaw, bwx, bwz, moving = true, dir = 1) {
   const a = actions.Paddling
   const dur = a ? a.getClip().duration : 1
   const phi = a ? (((a.time % dur) + dur) % dur) / dur : (time * 0.5) % 1
-  const lift = ss(0.6, 0.72, phi) * (1 - ss(0.93, 1.0, phi))                 // 0 = දියේ ඇදෙනවා, 1 = දියෙන් උඩට
+  const lift = ss(0.6, 0.72, phi) * (1 - ss(0.93, 1.0, phi))                 // 0 = pulling through the water, 1 = lifted out of the water
   const sz = boatSeat.z + SEAT.z
   const beam = props.boat && props.boat.userData.size ? props.boat.userData.size.x * 0.5 + 0.22 : 0.9
   const zb = sz + (phi < 0.62 ? THREE.MathUtils.lerp(-0.5, 0.65, phi / 0.62) : THREE.MathUtils.lerp(0.65, -0.5, (phi - 0.62) / 0.38))
   const sy = Math.sin(byaw), cy = Math.cos(byaw)
-  const Px = bwx + beam * cy + zb * sy, Pz = bwz - beam * sy + zb * cy     // බෝට්ටුවේ දකුණු පැත්තේ දිය මත ලක්ෂ්‍යය
+  const Px = bwx + beam * cy + zb * sy, Pz = bwz - beam * sy + zb * cy     // point on the water at the right side of the boat
   const tipY = THREE.MathUtils.lerp(WATER_Y - 0.3, WATER_Y + 0.45, lift)
   const dy = clamp((tipY - _H.y) / PADDLE_L, -0.98, 0.6)
   let hx = Px - _H.x, hz = Pz - _H.z, hl = Math.hypot(hx, hz)
   if (hl < 0.05) { hx = cy; hz = -sy; hl = 1 }
   const k = Math.sqrt(1 - dy * dy) / hl
   _dir.set(hx * k, dy, hz * k)
-  _up.copy(_dir).negate()                                                    // හබලේ මුදුන (අතේ ඉඳන් උඩට)
-  _zx.set(-sy, 0, -cy)                                                       // බෝට්ටුව ඉස්සරහට යන දිශාව (හබල පතුල එහාට)
+  _up.copy(_dir).negate()                                                    // paddle top (from the hand upward)
+  _zx.set(-sy, 0, -cy)                                                       // direction the boat moves forward (paddle blade faces away)
   _zx.addScaledVector(_up, -_zx.dot(_up)).normalize()
   _xx.crossVectors(_up, _zx)
   _bm.makeBasis(_xx, _up, _zx)
@@ -2414,103 +2431,103 @@ function updatePaddle(dt, riding, byaw, bwx, bwz, moving = true, dir = 1) {
    ===================================================================== */
 
 /* =====================================================================
-   STORY: පියවර (chapters) + subtitles + ගැහැණු හඬ + auto-play + hotspot card (sathishlella.online වගේ)
-   CHAPTERS: s = scroll අගය (ඇය ඒ තැනට ආවම පටන් ගන්නවා), sec = කොටස, text = කියවන වාක්‍ය,
-             card = hotspot එකේ card එක (title / sub / bullets / link). ඔයාගේ සැබෑ විස්තර වලින් වෙනස් කරගන්න.
+   STORY: chapters + subtitles + female voice + auto-play + hotspot cards (like sathishlella.online)
+   CHAPTERS: s = scroll value (starts when she reaches that spot), sec = section, text = the sentence that is read out,
+             card = the hotspot card (title / sub / bullets / link). Replace with your own real details.
    ===================================================================== */
 const SECTIONS = ['Arrival', 'Summary', 'Projects', 'Journey', 'Thanks']
 const SECTION_INFO = [
-  { title: 'Ruwanthika', sub: 'IT student. Walk with me through the forest.' },
+  { title: 'Shashini Ruwanthika', sub: 'IT student. Walk with me through the forest.' },
   { title: 'Who I am', sub: 'IT student building skills in data mining, machine learning and AI.' },
   { title: 'What I have built', sub: 'Agents, microservices, deep learning and MLOps.' },
   { title: 'How I work', sub: 'Teamwork, learning and growing together.' },
   { title: 'Thank you', sub: "Let's build something together." }
 ]
-const thS = f => TH.s0 + f * (TH.s1 - TH.s0)            // ගස් ගෙදර detour එකේ කොටසක s අගය (f = 0..1)
-const THP = TW.a + TW.up                                    // ගෙයි බිම නතර වෙන කොටස පටන් ගන්නා තැන
+const thS = f => TH.s0 + f * (TH.s1 - TH.s0)            // scroll value for a fraction f (0..1) of the treehouse detour
+const THP = TW.a + TW.up                                    // where the deck pause section starts
 const CHAPTERS = [
   { s: 0, sec: 0, pill: 'Welcome', noCard: true,
-    text: "Hi, I'm Ruwanthika. Come walk with me for a few minutes, and I'll show you what I build and what I've learned along the way." },
+    text: "Hi, I'm Shashini. Come walk with me for a few minutes, and I'll show you what I build and what I've learned along the way." },
   { s: 4.5, sec: 1, pill: 'About me', side: 1,
     card: { title: 'About me', sub: 'BSc (Hons) Information Technology | Horizon Campus, Sri Lanka',
-      bullets: ['Third year student, Intake 12/13', 'Based in Sri Lanka', 'Works in a five member project team'], link: '#' },
-    text: "I'm a third year B S c Information Technology student at Horizon Campus in Sri Lanka." },
+      bullets: ['Third year IT undergraduate', 'AI and machine learning internship seeker', 'From model training to deployment'], link: 'https://www.linkedin.com/in/ranasinghe-arachchige-shashini-ruwanthika-54a1962a6/' },
+    text: "I'm a third year B S c Information Technology student at Horizon Campus in Sri Lanka, looking for an A I and machine learning internship." },
   { s: 8.2, sec: 1, pill: 'My focus', side: -1,
     card: { title: 'What I focus on', sub: 'Data mining | Machine learning | AI',
-      bullets: ['Data mining and machine learning', 'Intelligent systems and MLOps', 'Agentic AI with retrieval'], link: '#' },
-    text: "My focus is data mining and machine learning, and now I'm learning to build intelligent agents. Let me show you, up in the tree house." },
-  { s: thS(THP + 0.05), sec: 2, pill: 'Ella', th: true,
-    card: { title: 'Ella trip assistant', sub: 'Agentic AI | Tourism',
-      bullets: ['Trip planning assistant', 'Retrieval augmented generation (RAG)', 'Streamlit interface'], link: '#' },
-    text: "Up here lives Ella, my trip planning assistant. It answers with retrieval augmented generation, so every suggestion is grounded in real travel information." },
+      bullets: ['Deep learning and computer vision', 'RAG and LLM agents', 'Microservices, Docker and MLOps basics'], link: 'https://github.com/Shashini2001' },
+    text: "My focus is machine learning and A I, from deep learning models to agents, and I like taking projects all the way to deployment. Let me show you, up in the tree house." },
+  { s: thS(THP + 0.05), sec: 2, pill: 'Ella Go', th: true,
+    card: { title: 'Ella Go: tourism assistant', sub: 'Intelligent Systems | Agentic AI',
+      bullets: ['Answers visitor questions about Ella, Sri Lanka', 'RAG over a 22 document knowledge base', 'Python, Streamlit, ChromaDB, Groq Llama 3.1'], link: 'https://github.com/Shashini2001/ella-tourism-assistant' },
+    text: "Up here lives Ella Go, my trip planning assistant. It answers with retrieval augmented generation, so every suggestion is grounded in real travel information." },
   { s: thS(THP + 0.17), sec: 2, pill: 'Ella agents', th: true,
-    card: { title: 'Ella: multi-agent design', sub: 'Agents that cooperate',
-      bullets: ['Several agents share the work', 'Planning, searching and answering', 'Simple Streamlit front end'], link: '#' },
-    text: "Behind Ella is a team of cooperating agents. One plans the trip, one searches, and one writes the answer." },
+    card: { title: 'Ella Go: multi-agent design', sub: 'Agents that cooperate',
+      bullets: ['A Router Agent and an Answer Agent', 'Routing, tool use, reflection and planning', 'Deployed on Streamlit Community Cloud'], link: 'https://github.com/Shashini2001/ella-tourism-assistant' },
+    text: "Behind Ella is a team of cooperating agents. A router agent decides what is needed, and an answer agent writes the reply." },
   { s: 32.6, sec: 2, pill: 'The bridge', side: 1,
-    card: { title: 'Connecting the pieces', sub: 'Front end | Services | Data',
-      bullets: ['Interfaces that talk to services', 'Services that talk to data', 'Everything tested end to end'], link: '#' },
-    text: "Like this bridge, good software connects the pieces: the interface, the services and the data." },
+    card: { title: 'Local Service Finder', sub: 'DevOps group project | Frontend developer',
+      bullets: ['Find local electricians, plumbers and mechanics', 'Call and WhatsApp contact buttons', 'GitHub Actions CI/CD, Docker and Vercel'], link: 'https://github.com/Laka-Manu/devops_local_service_finder_app' },
+    text: "Like this bridge, good software connects people with what they need. I built the front end of Local Service Finder, with a full CI C D pipeline behind it." },
   { s: 36, sec: 2, pill: 'BookNest', side: -1,
-    card: { title: 'BookNest', sub: 'Spring Boot microservices',
-      bullets: ['A full system built and tested', 'Independent services working together', 'Prepared for a live viva demo'], link: '#' },
-    text: "Crossing the bridge, this is BookNest. A set of Spring Boot microservices that I built and tested." },
+    card: { title: 'BookNest', sub: 'Spring Boot microservices | Group project',
+      bullets: ['Online library and bookstore', 'Auth, catalog, orders, delivery and reading progress', 'API gateway, RabbitMQ and Docker Compose'], link: 'https://github.com/Shashini2001/booknest-microservices' },
+    text: "Crossing the bridge, this is BookNest. An online bookstore built from Spring Boot microservices, tested end to end with Postman." },
   { s: 47, sec: 2, pill: 'Microservices', side: 1,
     card: { title: 'Why microservices', sub: 'BookNest design',
-      bullets: ['Each service does one job', 'Services talk through clean APIs', 'Easy to test one piece at a time'], link: '#' },
-    text: "Each service in BookNest does one job and talks to the others through clean interfaces, so I can test every piece on its own, and show it live." },
+      bullets: ['Each service does one job', 'Services talk through events and clean APIs', 'In-app PDF reader saves reading progress'], link: 'https://github.com/Shashini2001/booknest-microservices' },
+    text: "Each service in BookNest does one job and talks to the others through clean interfaces and events, so I can test every piece on its own." },
   { s: 59, sec: 2, pill: 'DermaMatch AI', side: -1,
-    card: { title: 'DermaMatch AI', sub: 'Multimodal deep learning',
-      bullets: ['Skin analysis from images', 'Skincare and makeup recommendations', 'Mini project'], link: '#' },
-    text: "Further along is DermaMatch A I. It looks at a photo of the skin and recommends skincare and makeup." },
+    card: { title: 'DermaMatch AI', sub: 'Data Mining and Machine Learning | Group project',
+      bullets: ['Skin analysis from images', 'Allergy-safe skincare and makeup recommendations', 'MobileNetV2, Flask and Vercel'], link: 'https://github.com/Shashini2001' },
+    text: "Further along is DermaMatch A I. It looks at a photo of the skin and recommends safe skincare and makeup." },
   { s: 71, sec: 2, pill: 'Multimodal', side: 1,
     card: { title: 'Multimodal learning', sub: 'DermaMatch AI',
-      bullets: ['Combines images with other inputs', 'Deep learning models', 'Personal recommendations'], link: '#' },
-    text: "DermaMatch uses multimodal deep learning, which means it learns from more than one kind of input at the same time." },
+      bullets: ['Skin type, condition and acne models', 'Ingredient conflict detection', '84 product catalogue, CIELAB shade matching'], link: 'https://github.com/Shashini2001' },
+    text: "DermaMatch uses multimodal deep learning, with ingredient conflict checks and shade matching for Asian and Sri Lankan skin tones." },
   { s: 83, sec: 2, pill: 'Docker fullstack', side: -1,
-    card: { title: 'Fullstack in Docker', sub: 'Multi-container deployment',
-      bullets: ['Spring Boot and Node.js services', 'MongoDB database', 'Everything runs with Docker Compose'], link: '#' },
-    text: "Here is a full stack app with Spring Boot, Node and MongoDB, all running together in Docker containers." },
+    card: { title: 'Fullstack in Docker', sub: 'Multi-container coursework',
+      bullets: ['Spring Boot and Node.js services', 'MongoDB database', 'Spring Cloud Gateway with Google OAuth2'], link: 'https://github.com/Shashini2001' },
+    text: "Here is a full stack app with Spring Boot, Node and MongoDB, all running together in Docker containers behind a secured gateway." },
   { s: 95, sec: 2, pill: 'Compose', side: 1,
     card: { title: 'One command to run it', sub: 'Docker Compose',
-      bullets: ['Every service in its own container', 'Same setup on any machine', 'Database included'], link: '#' },
+      bullets: ['Every service in its own container', 'Same setup on any machine', 'Debugged networking and repository scanning'], link: 'https://github.com/Shashini2001' },
     text: "With Docker Compose, one command starts every service, so the whole system runs the same way on any machine." },
   { s: 109, sec: 3, pill: 'The pier', noCard: true,
     text: "Now let's leave the road. Hop in the boat, and we'll drift down the river." },
   { s: 130, sec: 2, pill: 'Freshness MLOps', side: 1,
-    card: { title: 'Fruit freshness MLOps', sub: 'IT41043 Intelligent Systems',
-      bullets: ['Mango, banana and papaya', 'Multimodal pipeline', 'Freshness and shelf-life prediction'], link: '#' },
+    card: { title: 'Fruit freshness MLOps', sub: 'Intelligent Systems | Pair project',
+      bullets: ['Mango, banana and papaya', 'RGB images plus temperature, humidity, CO2 and O2', 'Freshness and shelf-life prediction'], link: 'https://github.com/Shashini2001/fruit-freshness-mlops' },
     text: "Drifting down the river, an M L Ops pipeline that predicts the freshness and shelf life of mangoes, bananas and papayas." },
   { s: 152, sec: 2, pill: 'The pipeline', side: -1,
     card: { title: 'From data to prediction', sub: 'MLOps pipeline',
-      bullets: ['Prepare and track the data', 'Train and compare models', 'Serve freshness predictions'], link: '#' },
-    text: "The pipeline prepares the data, trains and compares models, and then serves freshness predictions." },
+      bullets: ['Prepare and track the data', 'Train and compare models', 'Targeting an IEEE Access paper'], link: 'https://github.com/Shashini2001/fruit-freshness-mlops' },
+    text: "The pipeline combines pictures with sensor data, trains and compares models, and then serves freshness predictions." },
   { s: 172, sec: 3, pill: 'Teamwork', side: 1,
     card: { title: 'Teamwork', sub: 'IT41033 Data Mining and Machine Learning',
-      bullets: ['Five member group project', 'Guided by Mr. Ravidu Sankha', 'Learning by building together'], link: '#' },
+      bullets: ['Five member group project', 'Guided by Mr. Ravidu Sankha', 'Git branches, pull requests and CI/CD'], link: 'https://github.com/Shashini2001' },
     text: "Along the stream I learned that the best work grows in a team. I work with a group of five on my data mining module." },
-  { s: 192, sec: 3, pill: 'Learning', side: -1,
-    card: { title: 'Always learning', sub: 'Build, test, improve',
-      bullets: ['Learn by building real projects', 'Test early and often', 'Ask for feedback and improve'], link: '#' },
-    text: "I learn best by building real projects, testing early, and asking for feedback." },
-  { s: LAND_S + 2, sec: 3, pill: 'Landing', side: 1,
-    card: { title: 'Almost there', sub: 'What comes next',
-      bullets: ['More agents and deeper models', 'Production ready MLOps', 'Open to learning with others'], link: '#' },
-    text: "We have almost arrived. Next I want to build more agents, deeper models, and production ready pipelines." },
+  { s: 192, sec: 3, pill: 'LankaGo', side: -1,
+    card: { title: 'LankaGo', sub: 'Smart public transit and bus tracking | Android',
+      bullets: ['Real-time bus tracking and ETA', 'Seat reservation and QR tickets', 'Kotlin, Firebase and Google Maps API'], link: 'https://github.com/Shashini2001/lankago-app' },
+    text: "This is LankaGo, an Android app for live bus tracking in Sri Lanka, aligned with the U N goal for sustainable cities." },
+  { s: LAND_S + 2, sec: 3, pill: 'This portfolio', side: 1,
+    card: { title: 'This forest portfolio', sub: 'Three.js | Vite | Vercel',
+      bullets: ['A walk through a night forest instead of a page', 'Each project sits at a stop along the path', 'Tuned to run on laptops and phones'], link: 'https://github.com/Shashini2001/forest-walk' },
+    text: "Even this forest is a project. I built it with three J S, so you explore my work like a walk through the woods." },
   { s: LAND_S + 8, sec: 3, pill: 'Toolbox', side: -1,
     card: { title: 'My toolbox', sub: 'From these projects',
-      bullets: ['Python, Streamlit, RAG', 'Spring Boot and Node.js', 'Docker, MongoDB, MLOps'], link: '#' },
-    text: "These are the tools I reach for: Python and Streamlit, Spring Boot and Node, Docker and MongoDB." },
+      bullets: ['Python, TensorFlow, Keras, Streamlit, RAG', 'Java, Spring Boot, Kotlin, React, Node.js', 'Docker, MongoDB, MySQL, GitHub Actions, TryHackMe labs'], link: 'https://tryhackme.com/p/shashiniruwanthika607' },
+    text: "These are the tools I reach for: Python and TensorFlow, Spring Boot and Node, Docker and MongoDB, and I practice security on Try Hack Me." },
   { s: MAX_PROGRESS - 0.6, sec: 4, pill: 'Thank you', noCard: true,
     text: "Thank you for walking with me. Every project here is still growing, and so am I. Let's build something together." }
 ]
 
-/* chapter එකේ lantern එක + card එක පෙනෙන තැන (ඇය යන පාර අයිනේ) */
+/* where a chapter's lantern + card appear (beside the road she walks on) */
 function lampSpot(c) {
   const z = -c.s - 3.2
-  if (Math.abs(z + 35) < 6) return null                                    // පාලම
-  if (c.s > 104 && c.s < 117) return null                                  // තොටුපළ
-  if (c.s >= LAND_S - 1) return null                                       // ගොඩබෑම
+  if (Math.abs(z + 35) < 6) return null                                    // bridge
+  if (c.s > 104 && c.s < 117) return null                                  // pier
+  if (c.s >= LAND_S - 1) return null                                       // landing
   const side = c.side || 1
   const rm = riverMask(z)
   const x = pathX(z) + side * (rm > 0.3 ? riverHW(z) * 1.15 + 0.3 : PATH_HW + 0.5)
@@ -2534,7 +2551,7 @@ const ICON = {
   mute: '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9zM15 9.4 16.4 8l2.1 2.1L20.6 8 22 9.4 19.9 11.5 22 13.6 20.6 15l-2.1-2.1L16.4 15 15 13.6l2.1-2.1z"/></svg>'
 }
 if (el.restart) el.restart.innerHTML = ICON.restart
-if (el.loader) loadingEl.style.display = 'none'                    // පරණ loading පෙළ වෙනුවට HTML loader එක
+if (el.loader) loadingEl.style.display = 'none'                    // HTML loader instead of the old loading text
 window.setLoad = n => { if (el.loadbar) el.loadbar.style.width = Math.min(92, 6 + n * 8) + '%' }
 SECTIONS.forEach(n => {
   if (!el.side) return
@@ -2543,7 +2560,7 @@ SECTIONS.forEach(n => {
   el.side.appendChild(li)
 })
 
-/* ---- ගැහැණු හඬ (browser speechSynthesis) ---- */
+/* ---- female voice (browser speechSynthesis) ---- */
 const synth = ('speechSynthesis' in window) ? window.speechSynthesis : null
 let voiceOn = false, voiceReady = false, femaleVoice = null
 function pickVoice() {
@@ -2555,8 +2572,8 @@ if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice }
 function updateVoiceBtn() { if (el.voice) el.voice.innerHTML = voiceOn ? ICON.sound : ICON.mute }
 updateVoiceBtn()
 
-/* ---- කතාව කියවීම + subtitle (වාක්‍යෙන් වාක්‍යය) ---- */
-let started = !el.intro                       // intro button එක ඔබනකම් පටන් ගන්නේ නැහැ
+/* ---- narration + subtitles (sentence by sentence) ---- */
+let started = !el.intro                       // does not start until the intro button is pressed
 let narrating = false, narrToken = 0, curStep = -1, curSec = -1, stepTimer = 0
 let autoplay = false, autoPos = 0, goalIdx = 0, arrivedWait = 0
 const sentencesOf = t => (t.match(/[^.!?]+[.!?]*/g) || [t]).map(s => s.trim()).filter(Boolean)
@@ -2570,7 +2587,7 @@ function startNarration(i) {
   if (synth) synth.cancel()
   const sents = sentencesOf(CHAPTERS[i].text)
   narrating = true
-  const safety = sents.join(' ').length * 80 + 5000                // හඬ අසාර්ථක වුනොත් auto-play හිර වෙන්න දෙන්නේ නැහැ
+  const safety = sents.join(' ').length * 80 + 5000                // if the voice fails, do not let auto-play get stuck
   setTimeout(() => { if (tok === narrToken) narrating = false }, safety)
   if (voiceOn && voiceReady && synth) {
     setTimeout(() => {
@@ -2600,7 +2617,7 @@ function startNarration(i) {
   }
 }
 
-/* ---- hotspot (දිලිසෙන ගෝලය + නම + card) ---- */
+/* ---- hotspot (glowing sphere + name + card) ---- */
 const anchor = new THREE.Vector3()
 const orb = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: new THREE.Color(1, 0.78, 0.3), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }))
 orb.visible = false
@@ -2646,7 +2663,7 @@ function updateOverlay(dt) {
   el.card.style.visibility = vis ? 'visible' : 'hidden'
   el.pill.style.transform = `translate(${x + 16}px, ${y - 18}px)`
   const cw = el.card.offsetWidth || 340, ch = el.card.offsetHeight || 220
-  if (innerWidth < 760) {                                    // ෆෝන්: card එක උඩින් මැදට (පෙළ / ඇය වහන්නේ නැතිව)
+  if (innerWidth < 760) {                                    // phone: card at the top centre (so it does not cover the text / her)
     el.card.style.transform = `translate(${Math.max(8, (innerWidth - cw) / 2)}px, ${innerHeight < 640 ? 64 : 76}px)`
     el.pill.style.visibility = 'hidden'
     return
@@ -2655,7 +2672,7 @@ function updateOverlay(dt) {
   el.card.style.transform = `translate(${cx}px, ${cy}px)`
 }
 
-/* ---- පියවර මාරු වීම ---- */
+/* ---- step changes ---- */
 function setHeading(secI) {
   if (secI === curSec) return
   curSec = secI
@@ -2677,7 +2694,7 @@ function setStep(i) {
   hideCard()
   narrToken++
   if (synth) synth.cancel()
-  narrating = true                                         // පටන් ගන්න ඉන්න අතරතුර auto-play ඉස්සරහට යන්නේ නැහැ
+  narrating = true                                         // auto-play does not move ahead while narration is starting
   clearTimeout(stepTimer)
   stepTimer = setTimeout(() => { if (i !== curStep) return; startNarration(i); showCard(i) }, 550)
 }
@@ -2730,7 +2747,7 @@ window.forestReady = () => {
   el.loader?.classList.add('hide')
   el.intro?.classList.remove('hide')
 }
-document.title = 'Ruwanthika · A walk through the forest'
+document.title = 'Shashini Ruwanthika · A walk through the forest'
 
 let target = 0, progress = 0, pending = 0, lastInput = -9, glide = null, vel = 0
 const hint = document.createElement('div')
@@ -2743,7 +2760,7 @@ Object.assign(hint.style, {
 document.body.appendChild(hint)
 
 function move(delta) {
-  if (autoplay) setAutoplay(false)                        // scroll කළොත් auto-play නතර වෙනවා (ඔයා තෝරනවා)
+  if (autoplay) setAutoplay(false)                        // scrolling stops auto-play (you choose)
   glide = null
   pending = clamp(pending + delta, -4, 4)
   lastInput = time
@@ -2823,7 +2840,7 @@ function animate() {
   const rawDt = clock.getDelta()
   const dt = Math.min(rawDt, 0.05)
   time += dt
-  /* FPS අඩු නම් (මුල් තත්පර 10 ට පස්සේ) resolution එක පියවරෙන් පියවර අඩු කරනවා */
+  /* if FPS is low (after the first 10 seconds), lower the resolution step by step */
   if (ADAPT && time > 10) {
     perfAcc += Math.min(rawDt, 0.2); perfN++
     if (perfN >= 90) {
@@ -2836,7 +2853,7 @@ function animate() {
       perfAcc = 0; perfN = 0
     }
   }
-  /* camera එකෙන් ඈත chunk හංගනවා */
+  /* hide chunks far from the camera */
   if ((frameN++ & 7) === 0) {
     for (const im of chunkList) {
       const bs = im.boundingSphere
@@ -2848,7 +2865,7 @@ function animate() {
   wind.uTime.value = time
   mixer?.update(dt)
 
-  /* ---- චලනය: scroll නතර වුණ ගමන් ඇය එතැනම නවතිනවා (ලිස්සීමක් නැහැ). පිටිපස්සට scroll කළොත් ඇයත් පිටිපස්සට (action reverse) ---- */
+  /* ---- movement: when scrolling stops she stops right there (no sliding). Scrolling backwards makes her walk backwards (reversed action) ---- */
   const AUTO_V = 9.5, SCROLL_V = 10
   let dsp = 0
   if (autoplay && started) {
@@ -2870,13 +2887,13 @@ function animate() {
     dsp = Math.abs(d) <= stp ? d : Math.sign(d) * stp
     if (Math.abs(glide - progress) < 0.05) glide = null
   } else {
-    if (time - lastInput > 0.14) pending = 0                       // input නැත්නම් ඉතිරි ගමන ඉවත් කරනවා => ක්ෂණිකව නවතිනවා
+    if (time - lastInput > 0.14) pending = 0                       // no input: drop the remaining movement => stops instantly
     const stp = clamp(pending, -SCROLL_V * dt, SCROLL_V * dt)
     pending -= stp
     dsp = stp
   }
   const sNow = progress
-  if (sNow > TH.s0 && sNow < TH.s1 && thWay && TH.climb) dsp *= thK         // ඉණිමං ප්‍රදේශයේ හෙමින්
+  if (sNow > TH.s0 && sNow < TH.s1 && thWay && TH.climb) dsp *= thK         // slow inside the stair area
   progress = clamp(progress + dsp, 0, MAX_PROGRESS)
   target = progress
   vel = dt > 0 ? (progress - sNow) / dt : 0
@@ -2918,7 +2935,7 @@ function animate() {
     charPos.x = pathX(z)
     charPos.z = z
   }
-  /* ගස් ගෙදර: ඉණිමං පියගැටවලින් නැගලා ගෙයි බිමේ නතර වෙලා (Talking) කතා කරලා, ආපසු බහිනවා */
+  /* treehouse: climb the stairs, stop on the deck, talk (Talking), then come back down */
   let detourPause = false, detourHeading = 0, detourStairs = false
   const detourOn = !!(TH.climb && thWay && !riding && s > TH.s0 && s < TH.s1)
   const uDet = clamp((s - TH.s0) / (TH.s1 - TH.s0), 0, 1)
@@ -2928,8 +2945,8 @@ function animate() {
     detourPause = r.pause; detourHeading = r.heading; detourStairs = r.stairs
   } else charPos.y += (targetY - charPos.y) * Math.min(1, dt * 8)
 
-  /* ---- camera shots: ඇවිදිද්දී පිටිපස්සෙන්, නතර වුණාම ඉස්සරහින් (මුහුණ පැහැදිලිව) ---- */
-  const camSide = tmpSide.set(-D.z, 0, D.x)                  // ඇයගේ දකුණු පැත්ත
+  /* ---- camera shots: from behind while walking, from the front when stopped (clear face) ---- */
+  const camSide = tmpSide.set(-D.z, 0, D.x)                  // her right side
   const tEnd = ss(LAND_S + 6, MAX_PROGRESS - 1, s)
   const frontT = (idleTime > 0.3 || s < 1) ? 1 : 0
   frontW += (frontT - frontW) * (1 - Math.exp(-dt * (frontT ? 2.4 : 7)))
@@ -2952,19 +2969,19 @@ function animate() {
     let want
     if (riding) want = faceFwd
     else if (detourOn) want = detourPause ? faceShot : (moving ? detourHeading : faceShot)
-    else if (moving) want = faceFwd                                         // පිටිපස්සට යද්දීත් ඉස්සරහම බලාගෙන (action reverse වෙනවා)
+    else if (moving) want = faceFwd                                         // even when going backwards she faces forward (the action reverses)
     else want = lerpAngle(faceShot, faceBehind, tEnd)
     girl.rotation.y = lerpAngle(girl.rotation.y, want, 1 - Math.exp(-dt * 7))
 
     const dir = back ? -1 : 1
     const atEnd = s >= MAX_PROGRESS - 3
     if (riding) play('Paddling', moving ? dir : 0)
-    else if (detourOn && detourPause) play(actions.Talking ? 'Talking' : 'Waving', 1)                         // ගස් ගෙදර උඩ: කතා කරනවා
+    else if (detourOn && detourPause) play(actions.Talking ? 'Talking' : 'Waving', 1)                         // on the treehouse: talking
     else if (detourOn && detourStairs && !back && actions.Stairs && moving) play('Stairs', 1.15)
-    else if (detourOn && detourStairs && back && actions.Stairs && moving) play('Stairs', -1.15)             // පසුපසට: ඉණිමං action reverse
+    else if (detourOn && detourStairs && back && actions.Stairs && moving) play('Stairs', -1.15)             // backwards: reverse the stairs action
     else if (moving) play('Walking', dir * 1.3)
     else if (s < 3 || atEnd) play('Waving', 1)
-    else play(actions.Talking ? 'Talking' : (actions.Idle ? 'Idle' : 'Waving'), 1)                           // නතර වුණාම කතා කරනවා
+    else play(actions.Talking ? 'Talking' : (actions.Idle ? 'Idle' : 'Waving'), 1)                           // when stopped she talks
 
     updatePaddle(dt, riding, byaw, bwx, bwz, moving, dir)
   }
@@ -2986,7 +3003,7 @@ function animate() {
   camLook.lerp(tmpV, 1 - Math.exp(-dt * 6))
   camera.lookAt(camLook)
 
-  /* ආලෝකය: key light එක camera පැත්තෙන් (ඇයගේ මුහුණට), rim එක පිටිපස්සෙන් */
+  /* light: key light from the camera side (on her face), rim from behind */
   tmpDir.set(camera.position.x - charPos.x, 0, camera.position.z - charPos.z)
   if (tmpDir.lengthSq() < 1e-4) tmpDir.copy(D).negate()
   tmpDir.normalize()
@@ -3006,7 +3023,7 @@ function animate() {
     lampLights.forEach((l, i) => { if (sorted[i]) l.position.copy(sorted[i]) })
   }
   for (const g of lampGroups) g.visible = g.userData.keep ? g.position.distanceToSquared(charPos) < 70 * 70 : g.position.distanceToSquared(charPos) < LAMP_CULL * LAMP_CULL
-  if (thLight && thWay && thWay.camDir) {                    // ගස් ගෙදරේ (ගෙයි බිම උඩ) උණුසුම් ආලෝකය
+  if (thLight && thWay && thWay.camDir) {                    // warm light on the treehouse (above the deck)
     const dd = Math.hypot(charPos.x - thWay.deck.x, charPos.z - thWay.deck.z)
     thLight.position.set(thWay.deck.x - thWay.camDir.x * 0.8, thWay.deck.y + 2.3, thWay.deck.z - thWay.camDir.z * 0.8)
     thLight.intensity = 6 * (1 - ss(10, 24, dd))
@@ -3020,7 +3037,7 @@ function animate() {
 
   for (const b of butterflies) {
     const u = b.userData
-    if (u.zone) {                                              // තමන්ගේ කොටසේ විතරක් පෙනේ (දෙපැත්තෙන් සුමටව මැකේ)
+    if (u.zone) {                                              // visible only in its own section (fades smoothly on both sides)
       const f = ss(u.zone[0] - 4, u.zone[0], s) * (1 - ss(u.zone[1], u.zone[1] + 4, s))
       b.visible = f > 0.02
       if (!b.visible) continue
@@ -3063,7 +3080,7 @@ function animate() {
   }
   mistGeo.attributes.position.needsUpdate = true
 
-  /* රාත්‍රී effects */
+  /* night effects */
   skyGroup.position.copy(camera.position)
   starSets[0].material.opacity = 0.65 + 0.35 * Math.sin(time * 1.7)
   if (starSets[1]) starSets[1].material.opacity = 0.65 + 0.35 * Math.sin(time * 2.3 + 2.0)
@@ -3076,7 +3093,7 @@ function animate() {
     rmPos[i * 3 + 1] = rmBase[i] + Math.sin(time * 0.6 + i) * 0.12
   }
   rmGeo.attributes.position.needsUpdate = true
-  for (let i = 0; i < GM; i++) {                              // මීදුම ඇය ළඟින්ම තියාගන්නවා (ඉස්සරහට/පිටිපස්සට recycle)
+  for (let i = 0; i < GM; i++) {                              // keep the mist close to her (recycle forward / backward)
     let gz = gmPos[i * 3 + 2]
     if (gz > charPos.z + 16) gz -= 62
     else if (gz < charPos.z - 46) gz += 62
@@ -3085,7 +3102,7 @@ function animate() {
     gmPos[i * 3 + 1] = gmBase[i] + Math.sin(time * 0.3 + i * 2) * 0.12
   }
   gmGeo.attributes.position.needsUpdate = true
-  for (let i = 0; i < LV; i++) {                              // කොළ හෙමින් වැටෙනවා, ඇය ළඟින්ම recycle වෙනවා
+  for (let i = 0; i < LV; i++) {                              // leaves fall slowly and are recycled close to her
     let lz = lvPos[i * 3 + 2]
     if (lz > charPos.z + 14) lz -= 56
     else if (lz < charPos.z - 42) lz += 56
