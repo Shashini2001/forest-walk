@@ -1,6 +1,6 @@
 # A Walk Through the Forest
 
-An interactive 3D portfolio for **Shashini Ruwanthika**, an IT undergraduate focused on AI and machine learning. Instead of scrolling a normal page, visitors walk through a night forest. Each project sits at a stop along the path, and a guide narrates the story.
+An interactive 3D portfolio for **Shashini Ruwanthika**, a fourth year IT undergraduate focused on AI and machine learning. Instead of scrolling a normal page, visitors walk through a night forest. Each project sits at a stop along the path, and a guide narrates the story.
 
 **Live site:** https://forest-walk-phi.vercel.app
 **Demo video:** [Watch the demo](https://drive.google.com/file/d/1Sj4Kuh6btsP8zE7K-ROLSwKdZg5vMZta/view?usp=sharing)

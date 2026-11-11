@@ -2437,7 +2437,7 @@ function updatePaddle(dt, riding, byaw, bwx, bwz, moving = true, dir = 1) {
    ===================================================================== */
 const SECTIONS = ['Arrival', 'Summary', 'Projects', 'Journey', 'Thanks']
 const SECTION_INFO = [
-  { title: 'Shashini Ruwanthika', sub: 'IT student. Walk with me through the forest.' },
+  { title: 'Shashini Ruwanthika', sub: '4th year IT student. Walk with me through the forest.' },
   { title: 'Who I am', sub: 'IT student building skills in data mining, machine learning and AI.' },
   { title: 'What I have built', sub: 'Agents, microservices, deep learning and MLOps.' },
   { title: 'How I work', sub: 'Teamwork, learning and growing together.' },
@@ -2450,8 +2450,8 @@ const CHAPTERS = [
     text: "Hi, I'm Shashini. Come walk with me for a few minutes, and I'll show you what I build and what I've learned along the way." },
   { s: 4.5, sec: 1, pill: 'About me', side: 1,
     card: { title: 'About me', sub: 'BSc (Hons) Information Technology | Horizon Campus, Sri Lanka',
-      bullets: ['Third year IT undergraduate', 'AI and machine learning internship seeker', 'From model training to deployment'], link: 'https://www.linkedin.com/in/ranasinghe-arachchige-shashini-ruwanthika-54a1962a6/' },
-    text: "I'm a third year B S c Information Technology student at Horizon Campus in Sri Lanka, looking for an A I and machine learning internship." },
+      bullets: ['Fourth year IT undergraduate', 'AI and machine learning internship seeker', 'From model training to deployment'], link: 'https://www.linkedin.com/in/ranasinghe-arachchige-shashini-ruwanthika-54a1962a6/' },
+    text: "I'm a fourth year B S c Information Technology student at Horizon Campus in Sri Lanka, looking for an A I and machine learning internship." },
   { s: 8.2, sec: 1, pill: 'My focus', side: -1,
     card: { title: 'What I focus on', sub: 'Data mining | Machine learning | AI',
       bullets: ['Deep learning and computer vision', 'RAG and LLM agents', 'Microservices, Docker and MLOps basics'], link: 'https://github.com/Shashini2001' },
